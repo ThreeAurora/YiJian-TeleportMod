@@ -1,15 +1,13 @@
 --[[
     逸剑风云决 · 全地图传送 mod (TeleportMod)
-    基于 UE4SS 3.x + UE4.26
+    基于 UE4SS 实验版 + UE4.26
 
-    用法（游戏内按 `~` 打开控制台）：
+    用法（按 `~` 或 F10 打开 UE 控制台）：
       tpm <关键词>       搜索地图并传送（唯一匹配直接传，多匹配列出）
       tplist [关键词]    列出全部/匹配的地图
       tphelp             显示帮助
     快捷键：
-      F6                 屏幕提示帮助（无控制台时）
-
-    传送实现：UGameplayStatics::OpenLevel，跨地图加载。
+      F6                 直接传送到测试地图（Map65 修罗道）
 ]]
 
 -- ============ 工具函数 ============
@@ -35,12 +33,12 @@ local function FindPlayerController()
     return nil
 end
 
--- 获取 UGameplayStatics 默认对象（静态类方法容器）
+-- 获取 UGameplayStatics 默认对象
 local function GetGameplayStatics()
     return StaticFindObject("/Script/Engine.Default__GameplayStatics")
 end
 
--- 尝试在游戏屏幕显示消息（若游戏启用了 HUD 消息则可见）
+-- 尝试在游戏屏幕显示消息
 local function ScreenMsg(msg)
     local PC = FindPlayerController()
     if PC and PC:IsValid() then
@@ -54,7 +52,7 @@ end
 
 local ok_maps, Maps = pcall(require, "maps")
 if not ok_maps or type(Maps) ~= "table" then
-    Log("[传送] 警告：maps.lua 加载失败，请检查 Mods/TeleportMod/Scripts/maps.lua")
+    Log("[传送] 警告：maps.lua 加载失败")
     Maps = {}
 end
 Log(string.format("[传送] 已加载 %d 张地图", #Maps))
@@ -73,30 +71,58 @@ local function SearchMaps(kw)
     return out
 end
 
--- ============ 传送 ============
+-- ============ 传送（多路尝试） ============
 
 local function Teleport(mapPath)
-    Log("[传送] 开始传送: " .. mapPath)
+    Log("[传送] 开始传送: " .. tostring(mapPath))
     ExecuteInGameThread(function()
         local PC = FindPlayerController()
         if not PC or not PC:IsValid() then
             Log("[传送] 错误：找不到 PlayerController")
             return
         end
+        Log("[传送] 找到 PlayerController")
+
+        -- 方法 1: UGameplayStatics::OpenLevel
         local GS = GetGameplayStatics()
-        if not GS or not GS:IsValid() then
-            Log("[传送] 错误：无法访问 UGameplayStatics")
-            return
-        end
-        local ok, err = pcall(function()
-            GS:OpenLevel(PC, FName(mapPath), true, "")
-        end)
-        if ok then
-            Log("[传送] 正在传送到: " .. mapPath)
-            ScreenMsg("[传送] 正在传送到: " .. mapPath)
+        if GS and GS:IsValid() then
+            local ok, err = pcall(function()
+                GS:OpenLevel(PC, FName(mapPath), true, "")
+            end)
+            if ok then
+                Log("[传送] OpenLevel 已调用: " .. mapPath)
+                ScreenMsg("[传送] 正在传送到: " .. mapPath)
+                return
+            else
+                Log("[传送] OpenLevel 失败: " .. tostring(err))
+            end
         else
-            Log("[传送] 调用 OpenLevel 失败: " .. tostring(err))
+            Log("[传送] 无法访问 UGameplayStatics")
         end
+
+        -- 方法 2: 控制台 open 命令
+        local ok2, err2 = pcall(function()
+            PC:ProcessConsoleExec("open " .. mapPath, nil, PC)
+        end)
+        if ok2 then
+            Log("[传送] 控制台 open 已执行: " .. mapPath)
+            return
+        else
+            Log("[传送] ProcessConsoleExec 失败: " .. tostring(err2))
+        end
+
+        -- 方法 3: ClientTravel
+        local ok3, err3 = pcall(function()
+            PC:ClientTravel(mapPath, 1, false)
+        end)
+        if ok3 then
+            Log("[传送] ClientTravel 已调用: " .. mapPath)
+            return
+        else
+            Log("[传送] ClientTravel 失败: " .. tostring(err3))
+        end
+
+        Log("[传送] 所有传送方法均失败")
     end)
 end
 
@@ -108,6 +134,7 @@ local function PrintHelp()
     Log(" tpm <关键词>    搜索并传送地图")
     Log(" tplist [关键词]  列出地图")
     Log(" tphelp          帮助")
+    Log(" F6              直接传送到 Map65 (测试)")
     Log(" 例: tpm 神龙岛 | tpm Map65 | tplist 洛阳")
     Log("========================================")
 end
@@ -120,12 +147,37 @@ local function ListMaps(list, title)
     end
     Log(string.format("共 %d 项。输入 tpm <名称> 直接传送", #list))
     Log("----------------------------------------")
+    -- 屏幕显示前几个（游戏画面可见）
+    local screen = title .. "  " .. #list .. "项"
+    for i = 1, math.min(5, #list) do
+        screen = screen .. " | " .. i .. "." .. list[i].name
+    end
+    ScreenMsg(screen)
 end
 
--- 处理 tpm 命令
+-- 提取关键词（兼容 0/1 索引）
+local function ExtractKw(CommandParts)
+    if not CommandParts then return nil end
+    -- 打印调试信息
+    local desc = ""
+    for i, p in pairs(CommandParts) do
+        desc = desc .. string.format("[%s]=%s ", tostring(i), tostring(p))
+    end
+    Log("[传送调试] CommandParts: " .. desc)
+    -- 常见结构: [1]=命令名, [2]=参数
+    for _, idx in ipairs({2, 1, 0}) do
+        local v = CommandParts[idx]
+        if v and tostring(v) ~= "tpm" and tostring(v) ~= "" then
+            return tostring(v)
+        end
+    end
+    return nil
+end
+
 local function HandleTpm(CommandParts)
-    local kw = CommandParts and CommandParts[2]
-    if not kw or kw == "" then
+    local kw = ExtractKw(CommandParts)
+    if not kw then
+        Log("[传送] 未提供关键词，用法: tpm <地图名>")
         PrintHelp()
         return
     end
@@ -134,17 +186,17 @@ local function HandleTpm(CommandParts)
         Log("[传送] 未找到匹配「" .. kw .. "」的地图")
         return
     elseif #matches == 1 then
+        Log("[传送] 匹配唯一: " .. matches[1].name .. " -> " .. matches[1].path)
         Teleport(matches[1].path)
         return
     else
-        ListMaps(matches, string.format("[传送] 匹配「%s」%d 个，请细化关键词：", kw, #matches))
+        ListMaps(matches, string.format("[传送] 匹配「%s」%d 个，请细化：", kw, #matches))
     end
 end
 
--- 处理 tplist 命令
 local function HandleTplist(CommandParts)
-    local kw = CommandParts and CommandParts[2]
-    if not kw or kw == "" then
+    local kw = ExtractKw(CommandParts)
+    if not kw then
         ListMaps(Maps, "[传送] 全部地图列表")
         return
     end
@@ -155,26 +207,30 @@ end
 -- ============ 注册命令 ============
 
 RegisterConsoleCommandGlobalHandler("tpm", function(Cmd, CommandParts, Ar)
+    Log("[传送调试] tpm 命令触发, Cmd=" .. tostring(Cmd))
     HandleTpm(CommandParts)
     return true
 end)
 
 RegisterConsoleCommandGlobalHandler("tplist", function(Cmd, CommandParts, Ar)
+    Log("[传送调试] tplist 命令触发, Cmd=" .. tostring(Cmd))
     HandleTplist(CommandParts)
     return true
 end)
 
 RegisterConsoleCommandGlobalHandler("tphelp", function(Cmd, CommandParts, Ar)
+    Log("[传送调试] tphelp 命令触发")
     PrintHelp()
     return true
 end)
 
 -- ============ 快捷键 ============
 
+-- F6: 直接传送到神龙岛主场景（测试）
 if not IsKeyBindRegistered(Key.F6) then
     RegisterKeyBind(Key.F6, function()
-        PrintHelp()
-        ScreenMsg("传送 mod 已就绪：控制台输入 tpm <地图名> 传送")
+        Log("[传送] F6 按下，传送到神龙岛")
+        Teleport("/Game/JH/Maps/JiangNan/Map65_ShenLouDao/LV_ShenLouDao_S")
     end)
 end
 
