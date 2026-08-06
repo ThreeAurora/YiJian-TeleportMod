@@ -167,6 +167,46 @@ RegisterConsoleCommandGlobalHandler("tphelp", function(Cmd, CommandParts, Ar)
     return true
 end)
 
+-- ============ 诊断命令 ============
+
+-- tpinfo: dump JHNeoUISubsystem 方法 + 测试 tomap 调用
+RegisterConsoleCommandGlobalHandler("tpinfo", function(Cmd, CommandParts, Ar)
+    Log("[诊断] tpinfo 开始")
+    ExecuteInGameThread(function()
+        -- 1. dump JHNeoUISubsystem 的所有 UFunction
+        pcall(function()
+            local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
+            if JH and JH:IsValid() then
+                local cls = JH:GetClass()
+                Log("[诊断] JHNeoUISubsystem 类: " .. tostring(cls and cls:GetFName():ToString() or "?"))
+                local cnt = 0
+                if cls then
+                    cls:ForEachFunction(function(fn)
+                        cnt = cnt + 1
+                        Log(string.format("[诊断]   [FN] %s", fn:GetFName():ToString()))
+                    end)
+                end
+                Log("[诊断] JHNeoUISubsystem 函数数: " .. tostring(cnt))
+            else
+                Log("[诊断] JHNeoUISubsystem 未找到")
+            end
+        end)
+
+        -- 2. 测试 tomap 调用（ProcessConsoleExec）
+        pcall(function()
+            local PC = FindPlayerController()
+            if PC and PC:IsValid() then
+                Log("[诊断] 发送 tomap 27 (姑苏城)...")
+                PC:ProcessConsoleExec("tomap 27", nil, PC)
+                Log("[诊断] tomap 27 已发送")
+            else
+                Log("[诊断] 无 PlayerController")
+            end
+        end)
+    end)
+    return true
+end)
+
 -- ============ 快捷键 ============
 
 -- F8: 传送到姑苏城 (ID 27)
@@ -177,4 +217,4 @@ if not IsKeyBindRegistered(Key.F8) then
     end)
 end
 
-Log("[传送] 传送 mod 加载完成！控制台输入 tpm 姑苏城 试试")
+Log("[传送] 传送 mod 加载完成！控制台输入 tpinfo 诊断 / tpm 姑苏城 传送")
