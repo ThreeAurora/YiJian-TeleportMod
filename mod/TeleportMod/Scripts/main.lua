@@ -228,47 +228,58 @@ end)
 RegisterConsoleCommandGlobalHandler("tpmaps", function(Cmd, CommandParts, Ar)
     Log("[传送调试] tpmaps 命令触发，读取 Maps 表")
     ExecuteInGameThread(function()
+        -- 诊断: 游戏已加载的 DataTable
+        pcall(function()
+            local dts = FindAllOf("DataTable")
+            Log("[传送] 已加载 DataTable 数量: " .. tostring(dts and #dts or 0))
+            if dts then
+                for _, dt in pairs(dts) do
+                    if dt:IsValid() then
+                        Log("[传送] DataTable: " .. dt:GetFullName())
+                    end
+                end
+            end
+        end)
+
+        -- Maps 表
         local dt = LoadAsset("/Game/JH/Tables/Maps.Maps")
-        if not dt or not dt:IsValid() then
-            dt = StaticFindObject("/Game/JH/Tables/Maps.Maps")
-        end
         if not dt or not dt:IsValid() then
             Log("[传送] 无法加载 Maps 表")
             return
         end
-        Log("[传送] Maps 表对象: " .. tostring(dt:GetFullName()))
+        Log("[传送] Maps 表: " .. dt:GetFullName())
 
-        -- 延迟 1.5 秒再读（确保数据加载）
-        ExecuteWithDelay(1500, function()
-            -- 方法 1: GetRowNames
-            local ok, names = pcall(function()
-                return dt:GetRowNames()
-            end)
-            if ok and names then
-                local n = names:GetArrayNum()
-                Log("[传送] GetRowNames 行数: " .. tostring(n))
-                if n > 0 then
-                    names:ForEach(function(index, elem)
-                        local name = ""
-                        pcall(function() name = tostring(elem:get():ToString()) end)
-                        Log(string.format("[传送] MapID[%d]: %s", index, name))
-                    end)
-                end
-            else
-                Log("[传送] GetRowNames 失败: " .. tostring(names))
-            end
-
-            -- 方法 2: 反射读 RowMap / RowStruct
+        -- 延迟后读（确保数据加载）
+        ExecuteWithDelay(1000, function()
+            -- 方法 1: GetRowNames + ForEach
             pcall(function()
-                local rs = dt:GetPropertyValue("RowStruct")
-                Log("[传送] RowStruct: " .. tostring(rs))
+                local names = dt:GetRowNames()
+                Log("[传送] GetRowNames 返回: " .. tostring(names))
+                if names then
+                    Log("[传送] 类型: " .. tostring(names:type()))
+                end
+                if names and names:type() == "TArray" then
+                    local cnt = 0
+                    names:ForEach(function(idx, elem)
+                        cnt = cnt + 1
+                        local nm = ""
+                        pcall(function() nm = tostring(elem:get():ToString()) end)
+                        if cnt <= 30 then
+                            Log(string.format("[传送] Row[%d]=%s", idx, nm))
+                        end
+                    end)
+                    Log("[传送] ForEach 遍历到 " .. tostring(cnt) .. " 项")
+                end
             end)
+
+            -- 方法 2: 反射读 RowMap
             pcall(function()
                 local rm = dt:GetPropertyValue("RowMap")
-                Log("[传送] RowMap 类型: " .. tostring(rm and rm:type() or "nil"))
+                Log("[传送] RowMap 值: " .. tostring(rm) .. " 类型: " .. tostring(rm and rm:type() or "nil"))
+                if rm and rm:type() == "TArray" then
+                    Log("[传送] RowMap 大小: " .. tostring(rm:GetArrayNum()))
+                end
             end)
-
-            Log("[传送] Maps 表读取完成")
         end)
     end)
     return true
