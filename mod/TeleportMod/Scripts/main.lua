@@ -242,8 +242,10 @@ end
 local function HidePanel()
     menuOpen = false
     pcall(function()
-        if panel and panel:IsValid() then
-            panel:SetVisibility(1)  -- Collapsed
+        if panel then
+            -- 彻底移除面板（防止地图切换时崩溃）
+            pcall(function() panel:RemoveFromParent() end)
+            panel = nil
             local PC = FindPlayerController()
             local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
             if PC then
@@ -254,6 +256,16 @@ local function HidePanel()
     end)
     Log("[面板] 面板已关闭")
 end
+
+-- 地图切换前自动清理面板（防止引用失效崩溃）
+RegisterLoadMapPreHook(function()
+    if panel then
+        Log("[面板] 地图切换，清理面板")
+        pcall(function() panel:RemoveFromParent() end)
+        panel = nil
+    end
+    menuOpen = false
+end)
 
 -- ============ 键盘导航 ============
 
