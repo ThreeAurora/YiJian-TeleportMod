@@ -88,6 +88,28 @@ if not IsKeyBindRegistered(Key.F2) then
     end)
 end
 
+-- ============ F8 呼出游戏 GM 命令界面（好感度等 GM 命令专用） ============
+
+if not IsKeyBindRegistered(Key.F8) then
+    RegisterKeyBind(Key.F8, function()
+        Log("[传送] F8 按下：呼出 GM 命令界面")
+        ExecuteInGameThread(function()
+            pcall(function()
+                local JH = FindFirstOf("JHNeoUISubsystem")
+                if not JH or not JH:IsValid() then
+                    JH = StaticFindObject("/Script/JH.JHNeoUISubsystem")
+                end
+                if JH and JH:IsValid() then
+                    JH:ShowGMCommandLine()
+                    Log("[传送] ShowGMCommandLine 已调用（实例）")
+                else
+                    Log("[传送] JHNeoUISubsystem 实例未找到")
+                end
+            end)
+        end)
+    end)
+end
+
 -- ============ 全地图命令（中文名/全拼/首字母缩写） ============
 
 -- 加载全部地图拼音数据（258 个地图，注册中文名/全拼/缩写命令 + tpm 搜索）
@@ -190,3 +212,57 @@ end
 Log("[传送] maps_cmd 命令键 " .. tostring(mapCmdCount) .. " 个（含大小写变体）")
 
 --（已移除 RegisterULocalPlayerExecPreHook：实测黑色控制台不走 ULocalPlayer::Exec）
+
+-- ============ 调试：探测好感度数据结构（tpfav 轻量版，只读属性名） ============
+local function DumpAllProps(tag, obj)
+    if not obj or not obj:IsValid() then
+        Log("[fav] " .. tag .. " 无效"); return
+    end
+    Log("[fav] === " .. tag .. ": " .. tostring(obj:GetFullName()) .. " ===")
+    local n = 0
+    obj:ForEachProperty(function(p)
+        pcall(function()
+            n = n + 1
+            if n > 300 then return true end
+            Log("[fav]   " .. tostring(p:GetFName():ToString()))
+        end)
+    end)
+    Log("[fav] --- " .. tag .. " 属性数(前300): " .. tostring(n))
+end
+
+RegisterConsoleCommandGlobalHandler("tpfav", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        pcall(function()
+            Log("[fav] ===== 探测开始 =====")
+            -- PlayerController / Pawn / Character 属性
+            local PCs = FindAllOf("PlayerController")
+            Log("[fav] PlayerController 数量: " .. tostring(#(PCs or {})))
+            for i, pc in ipairs(PCs or {}) do
+                Log("[fav] PC[" .. i .. "]: " .. tostring(pc:GetFullName()))
+                DumpAllProps("PC" .. i, pc)
+            end
+            local pwns = FindAllOf("Pawn")
+            Log("[fav] Pawn 数量: " .. tostring(#(pwns or {})))
+            for _, pw in ipairs(pwns or {}) do
+                pcall(function()
+                    Log("[fav] Pawn: " .. tostring(pw:GetFullName()))
+                    DumpAllProps("Pawn", pw)
+                end)
+            end
+            -- 司马铃角色
+            local chars = FindAllOf("Character")
+            Log("[fav] Character 数量: " .. tostring(#(chars or {})))
+            for _, c in ipairs(chars or {}) do
+                pcall(function()
+                    local full = tostring(c:GetFullName())
+                    if string.find(string.lower(full), "simaling") then
+                        Log("[fav] 找到司马铃: " .. full)
+                        DumpAllProps("司马铃", c)
+                    end
+                end)
+            end
+            Log("[fav] ===== 探测完成 =====")
+        end)
+    end)
+    return true
+end)
