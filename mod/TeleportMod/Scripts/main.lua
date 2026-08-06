@@ -938,9 +938,9 @@ end
 -- hook GM 命令界面输入提交（识别拼音 → 传送）
 RegisterHook("/Game/JH/JHNeoUI_Common/Modules/GMCommand/BPMV_GMCommand.BPMV_GMCommand_C:BndEvt__Text_K2Node_ComponentBoundEvent_0_OnEditableTextCommittedEvent__DelegateSignature", function(...)
     Log("[命令] GM 输入提交触发")
+    local args = { ... }
     local txt = ""
     pcall(function()
-        local args = { ... }
         for i, p in ipairs(args) do
             local ps = tostring(p)
             if p and type(p) == "userdata" and p:type() == "RemoteUnrealParam" then
