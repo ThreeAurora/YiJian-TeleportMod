@@ -36,25 +36,37 @@ local function FindPlayerController()
     return nil
 end
 
+-- 地图路径映射（MapName → 完整路径）
+local ok_path, MapPaths = pcall(require, "maps_path")
+if not ok_path or type(MapPaths) ~= "table" then MapPaths = {} end
+
 local function CallTomap(mapId)
-    Log(string.format("[传送] ChangeSceneMapWithId %d", mapId))
+    Log(string.format("[传送] 地图ID %d", mapId))
     ExecuteInGameThread(function()
-        -- 方式1: 找 AsyncTaskChangeSceneMap 实例调用（tomap 底层）
         pcall(function()
-            local task = FindFirstOf("AsyncTaskChangeSceneMap")
-            if task and task:IsValid() then
-                task:ChangeSceneMapWithId(mapId)
-                Log("[传送] 实例调用 ChangeSceneMapWithId: " .. tostring(mapId))
-            else
-                Log("[传送] 未找到 AsyncTaskChangeSceneMap 实例")
+            -- 读 Maps 表的 MapName
+            local dt = LoadAsset("/Game/JH/Tables/Maps.Maps")
+            if not dt or not dt:IsValid() then
+                Log("[传送] Maps 表加载失败")
+                return
             end
-        end)
-        -- 方式2: CDO
-        pcall(function()
-            local cdo = StaticFindObject("/Script/JH.Default__AsyncTaskChangeSceneMap")
-            if cdo and cdo:IsValid() then
-                cdo:ChangeSceneMapWithId(mapId)
-                Log("[传送] CDO 调用 ChangeSceneMapWithId: " .. tostring(mapId))
+            local row = dt:FindRow(tostring(mapId))
+            if not row then
+                Log("[传送] 找不到行: " .. tostring(mapId))
+                return
+            end
+            local mapName = ""
+            pcall(function() mapName = tostring(row.MapName:ToString()) end)
+            local path = MapPaths[mapName]
+            if not path then
+                Log("[传送] 找不到路径: " .. mapName)
+                return
+            end
+            -- ClientTravel 传送到完整地图路径
+            local PC = FindPlayerController()
+            if PC and PC:IsValid() then
+                PC:ClientTravel(path, 1, false)
+                Log("[传送] ClientTravel: " .. path)
             end
         end)
     end)
@@ -113,6 +125,66 @@ RegisterConsoleCommandGlobalHandler("tpadd2", function(Cmd, CommandParts, Ar)
                 NPCId = -1,
             })
             Log("[驿站] AddRow 测试成功！")
+        end)
+    end)
+    return true
+end)
+
+-- 读 Maps 表 MapName 实际值（FName → 字符串）
+RegisterConsoleCommandGlobalHandler("tpdir3", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local dt = LoadAsset("/Game/JH/Tables/Maps.Maps")
+            if not dt or not dt:IsValid() then return end
+            for _, id in ipairs({1, 9, 15, 27, 1000}) do
+                pcall(function()
+                    local row = dt:FindRow(tostring(id))
+                    if row then
+                        local mn = ""
+                        pcall(function() mn = tostring(row.MapName:ToString()) end)
+                        Log("[dir3] ID " .. tostring(id) .. " MapName = " .. mn)
+                    end
+                end)
+            end
+        end)
+    end)
+    return true
+end)
+
+-- 读 Maps 表行字段（找 MapDir/MapName 地图路径）
+RegisterConsoleCommandGlobalHandler("tpdir2", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local dt = LoadAsset("/Game/JH/Tables/Maps.Maps")
+            if not dt or not dt:IsValid() then return end
+            -- 读行 9（梧桐村）的完整字段
+            pcall(function()
+                local row = dt:FindRow("9")
+                if not row then
+                    Log("[dir] 行 9 未找到")
+                    return
+                end
+                local rs = dt:GetPropertyValue("RowStruct")
+                if rs then
+                    rs:ForEachProperty(function(prop)
+                        pcall(function()
+                            local pname = prop:GetFName():ToString()
+                            local val = tostring(row[pname])
+                            Log("[dir] 行9 字段 " .. pname .. " = " .. val)
+                        end)
+                    end)
+                end
+            end)
+            -- 行 1000（武当派）的 MapDir/MapName
+            pcall(function()
+                local row = dt:FindRow("1000")
+                if row then
+                    pcall(function()
+                        Log("[dir] 行1000 MapDir = " .. tostring(row.MapDir))
+                        Log("[dir] 行1000 MapName = " .. tostring(row.MapName))
+                    end)
+                end
+            end)
         end)
     end)
     return true
@@ -350,7 +422,7 @@ local function CreatePanel()
             pcall(function() title:SetText(FText(string.format("WORLD MAP TELEPORT (%d)", #BigMaps))) end)
             scroll:AddChild(title)
 
-            -- 全部地图（每个一个按钮，鼠标点击直接传送）
+            -- 全部地图（每个一个按钮，先用键盘选择+回车传送；点击绑定另行处理）
             itemTexts = {}
             for i, m in ipairs(BigMaps) do
                 local btn = ConstructWidget("/Script/UMG.Button", tree)
@@ -360,13 +432,6 @@ local function CreatePanel()
                     btn:SetContent(txt)
                 end)
                 scroll:AddChild(btn)
-                -- 绑定点击 → ChangeSceneMapWithId 传送
-                pcall(function()
-                    btn.OnClicked:Add(function()
-                        Log("[传送] 鼠标点击: " .. m.name .. " (ID " .. tostring(m.id) .. ")")
-                        CallTomap(m.id)
-                    end)
-                end)
                 itemTexts[i] = txt
             end
             Log("[面板] 全量按钮创建完成: " .. tostring(#BigMaps) .. " 项")
@@ -558,6 +623,7 @@ local function RegCmd(cmdname, m)
             RegisterConsoleCommandGlobalHandler(cmdname, function()
                 Log(string.format("[传送] 「%s」-> %s (tomap %d)", cmdname, m.name, m.id))
                 CallTomap(m.id)
+                return true
             end)
         end)
         registered[cmdname] = true
