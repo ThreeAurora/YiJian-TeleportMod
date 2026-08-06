@@ -47,12 +47,12 @@ end
 
 -- ============ 地图数据（ID → 地名） ============
 
-local ok_maps, Maps = pcall(require, "maps_names")
+local ok_maps, Maps = pcall(require, "maps_pinyin")
 if not ok_maps or type(Maps) ~= "table" then
-    Log("[传送] 警告：maps_names.lua 加载失败")
+    Log("[传送] 警告：maps_pinyin.lua 加载失败")
     Maps = {}
 end
-Log(string.format("[传送] 已加载 %d 个地图（ID→地名）", #Maps))
+Log(string.format("[传送] 已加载 %d 个地图（ID→地名→拼音）", #Maps))
 
 -- ============ 调用游戏 tomap 命令 ============
 
@@ -167,6 +167,113 @@ RegisterConsoleCommandGlobalHandler("tphelp", function(Cmd, CommandParts, Ar)
     return true
 end)
 
+-- ============ 自动注册直接传送命令 ============
+-- 输入地名/拼音/唯一缩写即可直接传送，无需 tpm 前缀
+
+-- 归并同名（同一地名的多个入口，取第一个 ID）
+local byName = {}
+local order = {}
+for _, m in ipairs(Maps) do
+    if m.name and not byName[m.name] then
+        byName[m.name] = m
+        table.insert(order, m.name)
+    end
+end
+
+-- 检查首字母缩写冲突（不同地名同缩写）
+local abbrCount = {}
+for _, m in pairs(byName) do
+    if m.abbr then
+        abbrCount[m.abbr] = (abbrCount[m.abbr] or 0) + 1
+    end
+end
+
+local registered = {}
+local regCount = 0
+local function RegCmd(cmdname, m)
+    if cmdname and cmdname ~= "" and not registered[cmdname] then
+        local ok = pcall(function()
+            RegisterConsoleCommandGlobalHandler(cmdname, function()
+                Log(string.format("[传送] 「%s」-> 传送到 %s (tomap %d)", cmdname, m.name, m.id))
+                CallTomap(m.id)
+            end)
+        end)
+        if ok then
+            registered[cmdname] = true
+            regCount = regCount + 1
+        end
+    end
+end
+
+for _, name in ipairs(order) do
+    local m = byName[name]
+    RegCmd(m.name, m)      -- 中文名
+    RegCmd(m.pinyin, m)    -- 拼音全拼
+    if abbrCount[m.abbr] == 1 then  -- 唯一缩写
+        RegCmd(m.abbr, m)
+    end
+end
+
+Log(string.format("[传送] 已注册 %d 个直接传送命令（输入地名/拼音/唯一缩写即可传送）", regCount))
+
+-- ============ F1 GM 命令拦截（hook exec 通道） ============
+
+local function SearchMapsAll(kw)
+    local k = string.lower(kw or "")
+    local out = {}
+    for _, m in ipairs(Maps) do
+        local n = string.lower(m.name or "")
+        local p = string.lower(m.pinyin or "")
+        local a = string.lower(m.abbr or "")
+        if string.find(n, k, 1, true) or string.find(p, k, 1, true) or string.find(a, k, 1, true) then
+            table.insert(out, m)
+        end
+    end
+    return out
+end
+
+-- 尝试处理地图命令：输入匹配唯一地图则传送
+local function TryHandleMapCmd(cmd)
+    if not cmd then return false end
+    local kw = tostring(cmd):gsub("^%s+", ""):gsub("%s+$", "")
+    if kw == "" then return false end
+    -- 忽略游戏自身命令（含空格参数的一般是游戏命令）
+    if string.find(kw, " ") then return false end
+    local matches = SearchMapsAll(kw)
+    if #matches == 1 then
+        Log("[传送] 拦截「" .. kw .. "」-> 传送到 " .. matches[1].name .. " (ID " .. tostring(matches[1].id) .. ")")
+        CallTomap(matches[1].id)
+        return true
+    end
+    return false
+end
+
+-- 1) ULocalPlayer::Exec hook
+RegisterULocalPlayerExecPreHook(function(Context, InWorld, Cmd, Ar)
+    if TryHandleMapCmd(Cmd) then
+        Log("[传送] 通过 ULocalPlayer::Exec 拦截")
+        return true, false  -- 处理完成，阻止原始执行
+    end
+end)
+
+-- 2) ProcessConsoleExec hook
+RegisterProcessConsoleExecPreHook(function(Context, Cmd, CommandParts, Ar, Executor)
+    if TryHandleMapCmd(Cmd) then
+        Log("[传送] 通过 ProcessConsoleExec 拦截")
+        return true
+    end
+end)
+
+-- 3) CallFunctionByNameWithArguments hook
+RegisterCallFunctionByNameWithArgumentsPreHook(function(Context, Str, Ar, Executor, bForce)
+    if TryHandleMapCmd(Str) then
+        Log("[传送] 通过 CallFunctionByName 拦截")
+        return true
+    end
+end)
+
+Log("[传送] 已安装 F1 命令拦截钩子（输入地图名/拼音直接传送）")
+
 -- ============ 诊断命令 ============
 
 -- tpinfo: dump JHNeoUISubsystem 方法 + 测试 tomap 调用
@@ -203,11 +310,103 @@ RegisterConsoleCommandGlobalHandler("tpinfo", function(Cmd, CommandParts, Ar)
                 Log("[诊断] 无 PlayerController")
             end
         end)
+
+        -- 3. dump 关键函数参数签名（ChangeSceneMapDDD / OpenCourierStation / OpenWorldMap）
+        Log("[诊断] === 关键函数参数 dump ===")
+        pcall(function()
+            local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
+            if JH and JH:IsValid() then
+                local cls = JH:GetClass()
+                local targets = { "ChangeSceneMapDDD", "OpenCourierStation", "OpenWorldMap", "OpenCourierStationByNPC", "BPSimpleAlert" }
+                for _, tname in ipairs(targets) do
+                    cls:ForEachFunction(function(fn)
+                        local fname = fn:GetFName():ToString()
+                        if fname == tname then
+                            Log("[诊断] === 函数: " .. fname .. " ===")
+                            fn:ForEachProperty(function(prop)
+                                Log(string.format("[诊断]   参数/属性: %s (%s)", prop:GetFName():ToString(), prop:GetClass():GetFName():ToString()))
+                            end)
+                        end
+                    end)
+                end
+            end
+        end)
+        Log("[诊断] === 参数 dump 结束 ===")
+    end)
+    return true
+end)
+
+-- ============ 驿站表读写测试 ============
+
+RegisterConsoleCommandGlobalHandler("tpcourier", function(Cmd, CommandParts, Ar)
+    Log("[驿站] === 读取驿站表 ===")
+    ExecuteInGameThread(function()
+        local dt = LoadAsset("/Game/JH/Tables/CourierStation.CourierStation")
+        if not dt or not dt:IsValid() then
+            Log("[驿站] 加载失败")
+            return
+        end
+        Log("[驿站] 表: " .. dt:GetFullName())
+
+        -- RowStruct（行结构字段）
+        pcall(function()
+            local rs = dt:GetPropertyValue("RowStruct")
+            Log("[驿站] RowStruct: " .. tostring(rs))
+            if rs and rs:IsValid() then
+                local cnt = 0
+                rs:ForEachProperty(function(prop)
+                    cnt = cnt + 1
+                    Log(string.format("[驿站]   字段: %s (%s)", prop:GetFName():ToString(), prop:GetClass():GetFName():ToString()))
+                end)
+                Log("[驿站] RowStruct 字段数: " .. tostring(cnt))
+            end
+        end)
+
+        -- GetRowNames
+        pcall(function()
+            local names = dt:GetRowNames()
+            Log("[驿站] GetRowNames 类型: " .. tostring(names and names:type() or "nil"))
+            if names then
+                local cnt = 0
+                names:ForEach(function(idx, elem)
+                    cnt = cnt + 1
+                    local nm = ""
+                    pcall(function() nm = tostring(elem:get():ToString()) end)
+                    Log(string.format("[驿站] Row[%d] = %s", idx, nm))
+                end)
+                Log("[驿站] 遍历到 " .. tostring(cnt) .. " 行")
+            end
+        end)
+        Log("[驿站] === 读取结束 ===")
     end)
     return true
 end)
 
 -- ============ 快捷键 ============
+
+-- 打开游戏驿站面板（文字列表传送）的函数
+local function OpenCourierPanel()
+    Log("[传送] 打开驿站面板")
+    ExecuteInGameThread(function()
+        pcall(function()
+            local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
+            if JH and JH:IsValid() then
+                JH:OpenCourierStation(0)
+                Log("[传送] 已调用 OpenCourierStation(0)")
+            else
+                Log("[传送] JHNeoUISubsystem 未找到")
+            end
+        end)
+    end)
+end
+
+-- F2: 打开驿站面板（测试文字列表 UI）
+if not IsKeyBindRegistered(Key.F2) then
+    RegisterKeyBind(Key.F2, function()
+        Log("[传送] F2 按下")
+        OpenCourierPanel()
+    end)
+end
 
 -- F8: 传送到姑苏城 (ID 27)
 if not IsKeyBindRegistered(Key.F8) then
@@ -217,4 +416,4 @@ if not IsKeyBindRegistered(Key.F8) then
     end)
 end
 
-Log("[传送] 传送 mod 加载完成！控制台输入 tpinfo 诊断 / tpm 姑苏城 传送")
+Log("[传送] 传送 mod 加载完成！F2=驿站面板 / tpinfo=诊断 / tpm 姑苏城=传送")
