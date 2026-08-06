@@ -406,6 +406,46 @@ RegisterConsoleCommandGlobalHandler("tpcourier", function(Cmd, CommandParts, Ar)
     return true
 end)
 
+-- ============ dump Maps 表全部行名 ============
+
+RegisterConsoleCommandGlobalHandler("tprows", function(Cmd, CommandParts, Ar)
+    Log("[rows] === dump Maps 表全部行名 ===")
+    ExecuteInGameThread(function()
+        local dt = LoadAsset("/Game/JH/Tables/Maps.Maps")
+        if not dt or not dt:IsValid() then
+            Log("[rows] 加载失败")
+            return
+        end
+        Log("[rows] 表: " .. dt:GetFullName())
+
+        -- 方法1: GetRowNames + ForEach
+        pcall(function()
+            local names = dt:GetRowNames()
+            Log("[rows] GetRowNames 返回: " .. tostring(names))
+            if names then
+                Log("[rows] 类型: " .. tostring(names:type()))
+                local cnt = 0
+                names:ForEach(function(idx, elem)
+                    cnt = cnt + 1
+                    local nm = ""
+                    pcall(function() nm = tostring(elem:get():ToString()) end)
+                    Log(string.format("[rows] Row[%d] = %s", idx, nm))
+                end)
+                Log("[rows] GetRowNames 遍历到 " .. tostring(cnt))
+            end
+        end)
+
+        -- 方法2: RowMap 反射
+        pcall(function()
+            local rm = dt:GetPropertyValue("RowMap")
+            Log("[rows] RowMap: " .. tostring(rm) .. " 类型: " .. tostring(rm and rm:type() or "nil"))
+        end)
+
+        Log("[rows] === dump 结束 ===")
+    end)
+    return true
+end)
+
 -- ============ 快捷键 ============
 
 -- 打开游戏驿站面板（文字列表传送）的函数
