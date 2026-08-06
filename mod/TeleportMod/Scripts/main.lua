@@ -416,4 +416,32 @@ if not IsKeyBindRegistered(Key.F8) then
     end)
 end
 
-Log("[传送] 传送 mod 加载完成！F2=驿站面板 / tpinfo=诊断 / tpm 姑苏城=传送")
+-- ============ HUD Canvas 绘制测试（UI 方案验证） ============
+local hudHooked = false
+local function SetupHUDDraw()
+    if hudHooked then return end
+    hudHooked = true
+    local ok = pcall(function()
+        RegisterHook("/Script/Engine.HUD:PostRender", function(self, Canvas)
+            if not Canvas or not Canvas:IsValid() then return end
+            pcall(function()
+                local font = StaticFindObject("/Engine/EngineFonts/Roboto.Roboto")
+                if not font or not font:IsValid() then
+                    font = LoadAsset("/Engine/EngineFonts/Roboto.Roboto")
+                end
+                if font and font:IsValid() then
+                    Canvas:DrawText(font, "TeleportMod UI 测试 OK", 200, 200, 1.0, 1.0)
+                else
+                    Canvas:DrawText(nil, "UI test (no font)", 200, 200, 1.0, 1.0)
+                end
+            end)
+        end)
+        Log("[HUD] PostRender hook 安装成功")
+    end)
+    if not ok then
+        Log("[HUD] hook 安装失败")
+    end
+end
+ExecuteWithDelay(3000, SetupHUDDraw)
+
+Log("[传送] 传送 mod 加载完成！F2=驿站面板 / F1输入地名=传送 / HUD绘制测试中")
