@@ -166,68 +166,50 @@ local function CreatePanel()
         -- 字体：暂不用复制的字体（可能无效导致渲染崩溃），先测稳定性
         textFont = nil
 
-        -- 构建控件树
+        -- 构建控件树（简化：VerticalBox 根，不用 Canvas/Border/字体，先确认 SetText 工作）
         pcall(function()
             local tree = widget.WidgetTree
 
-            -- CanvasPanel 根
-            local canvas = ConstructWidget("/Script/UMG.CanvasPanel", tree)
-            if not canvas then
-                Log("[面板] CanvasPanel 创建失败")
+            local vbox = ConstructWidget("/Script/UMG.VerticalBox", tree)
+            if not vbox then
+                Log("[面板] VerticalBox 创建失败")
                 return
             end
-            tree.RootWidget = canvas
+            tree.RootWidget = vbox
 
-            -- 背景 Border（半透明黑）
-            local border = ConstructWidget("/Script/UMG.Border", tree)
-            local bs = canvas:AddChildToCanvas(border)
-            bs:SetAnchors({ Minimum = { X = 0, Y = 0 }, Maximum = { X = 0, Y = 0 } })
-            bs:SetPosition({ X = 30, Y = 30 })
-            bs:SetSize({ X = 420, Y = 40 + PAGE_SIZE * 26 + 40 })
-            pcall(function()
-                border:SetBrushColor({ R = 0.1, G = 0.1, B = 0.1, A = 0.9 })
-            end)
-
-            -- VerticalBox
-            local vbox = ConstructWidget("/Script/UMG.VerticalBox", tree)
-            border:SetContent(vbox)
-
-            -- 设置中文字体（楷体）的辅助函数
-            local function SetCNFont(txt)
-                pcall(function()
-                    local f = LoadAsset("/Game/JH/JHNeoUI/UIAssets/Font/simkai")
-                    if f and f:IsValid() then
-                        local fi = txt.Font
-                        fi.FontObject = f
-                        txt:SetFont(fi)
-                    end
-                end)
-            end
-
-            -- 标题
+            -- 标题（英文测试 SetText 是否工作）
             local title = ConstructWidget("/Script/UMG.TextBlock", tree)
-            title:SetText(FText("世 界 地 图 传 送"))
-            SetCNFont(title)
+            Log("[面板] 创建标题")
+            title:SetText(FText("WORLD MAP TELEPORT"))
+            Log("[面板] 标题 SetText 完成")
             vbox:AddChildToVerticalBox(title)
 
-            -- 地图列表（固定 12 个槽位，分页填充）
+            -- 地图列表（固定 12 个槽位，创建时立即设置文本，不依赖 UpdateList）
             itemTexts = {}
             for i = 1, PAGE_SIZE do
                 local txt = ConstructWidget("/Script/UMG.TextBlock", tree)
-                SetCNFont(txt)
+                local m = BigMaps[i]
+                if m then
+                    pcall(function()
+                        txt:SetText(FText(string.format("[%d]", m.id)))
+                        Log("[面板] 槽位 " .. i .. " SetText: " .. tostring(m.id))
+                    end)
+                end
                 vbox:AddChildToVerticalBox(txt)
                 itemTexts[i] = txt
             end
+            Log("[面板] 槽位创建完成: " .. tostring(#itemTexts))
 
             -- 提示行
             local hint = ConstructWidget("/Script/UMG.TextBlock", tree)
-            hint:SetText(FText("UP/DOWN select  PGUP/PGDN page  ENTER go  ESC close"))
-            SetCNFont(hint)
+            hint:SetText(FText("UP/DOWN select  ENTER go  ESC close"))
             vbox:AddChildToVerticalBox(hint)
 
-            Log("[面板] 构建完成，准备 AddToViewport")
             widget:AddToViewport(10000)
-            Log("[面板] AddToViewport 完成，共 " .. tostring(#BigMaps) .. " 个大位置")
+            Log("[面板] AddToViewport 完成")
+            -- 面板创建完成后填充列表文字
+            Log("[面板] CreatePanel 调用 UpdateList")
+            UpdateList()
         end)
     end)
 end
@@ -242,6 +224,10 @@ local function TotalPages()
 end
 
 local function UpdateList()
+    if itemTexts == nil then
+        Log("[面板] UpdateList: itemTexts 是 nil!")
+        return
+    end
     Log("[面板] UpdateList: 槽位数=" .. tostring(#itemTexts))
     pcall(function()
         local pageStart = (pageIndex - 1) * PAGE_SIZE + 1
@@ -250,11 +236,7 @@ local function UpdateList()
             local m = BigMaps[idx]
             if m and itemTexts[i] then
                 pcall(function()
-                    itemTexts[i]:SetText(FText(string.format("%d. %s", idx, m.name)))
-                end)
-            elseif itemTexts[i] then
-                pcall(function()
-                    itemTexts[i]:SetText(FText(""))
+                    itemTexts[i]:SetText(FText(string.format("[%d]", m.id)))
                 end)
             end
         end
@@ -286,23 +268,22 @@ local function ShowPanel()
         end
     end)
     Log("[面板] ShowPanel: UpdateList")
-    UpdateList()
+    if panel then
+        UpdateList()
+    end
     Log("[面板] 面板已打开")
 end
 
 local function HidePanel()
     menuOpen = false
+    Log("[面板] HidePanel: 开始")
+    -- 完全不碰面板（避免 SetVisibility/RemoveFromParent 崩溃），只恢复输入模式
     pcall(function()
-        if panel then
-            -- 彻底移除面板（防止地图切换时崩溃）
-            pcall(function() panel:RemoveFromParent() end)
-            panel = nil
-            local PC = FindPlayerController()
-            local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
-            if PC then
-                pcall(function() library:SetInputMode_GameOnly(PC) end)
-                pcall(function() PC:SetShowMouseCursor(false) end)
-            end
+        local PC = FindPlayerController()
+        local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+        if PC then
+            Log("[面板] HidePanel: SetInputMode_GameOnly")
+            pcall(function() library:SetInputMode_GameOnly(PC) end)
         end
     end)
     Log("[面板] 面板已关闭")
@@ -381,9 +362,10 @@ if not IsKeyBindRegistered(Key.RETURN) then
         if menuOpen then
             local m = BigMaps[selectedIdx]
             if m then
-                Log("[传送] 面板选择: " .. m.name .. " (ID " .. tostring(m.id) .. ")")
-                -- 先移除面板（防止地图切换时 widget 失效崩溃），再传送
+                Log("[传送] 面板选择: " .. m.name)
+                Log("[面板] 回车: 先 HidePanel")
                 HidePanel()
+                Log("[面板] 回车: HidePanel 完成，CallTomap")
                 CallTomap(m.id)
             end
         end
