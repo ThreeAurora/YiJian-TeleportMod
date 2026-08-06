@@ -95,15 +95,23 @@ if not IsKeyBindRegistered(Key.F8) then
         Log("[传送] F8 按下：呼出 GM 命令界面")
         ExecuteInGameThread(function()
             pcall(function()
-                local JH = FindFirstOf("JHNeoUISubsystem")
-                if not JH or not JH:IsValid() then
-                    JH = StaticFindObject("/Script/JH.JHNeoUISubsystem")
+                local subs = FindAllOf("JHNeoUISubsystem")
+                Log("[传送] JHNeoUISubsystem 实例数: " .. tostring(#(subs or {})))
+                local tried = 0
+                for _, s in ipairs(subs or {}) do
+                    pcall(function()
+                        Log("[传送] 调用实例: " .. tostring(s:GetFullName()))
+                        s:ShowGMCommandLine()
+                        tried = tried + 1
+                    end)
                 end
-                if JH and JH:IsValid() then
-                    JH:ShowGMCommandLine()
-                    Log("[传送] ShowGMCommandLine 已调用（实例）")
-                else
-                    Log("[传送] JHNeoUISubsystem 实例未找到")
+                if tried == 0 then
+                    Log("[传送] 未找到 JHNeoUISubsystem 实例，尝试 Default 对象")
+                    local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
+                    if JH and JH:IsValid() then
+                        JH:ShowGMCommandLine()
+                        Log("[传送] Default ShowGMCommandLine 已调用")
+                    end
                 end
             end)
         end)
