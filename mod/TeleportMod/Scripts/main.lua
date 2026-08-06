@@ -58,6 +58,8 @@ local menuOpen = false
 local selectedIdx = 1
 local itemTexts = {}
 local textFont = nil
+local pageIndex = 1
+local PAGE_SIZE = 12
 
 -- 从游戏已有 TextBlock 复制中文字体
 local function GetChineseFont()
@@ -79,20 +81,43 @@ local function GetChineseFont()
     return font
 end
 
--- 找一个可实例化的 UserWidget 容器类
+-- 找一个可实例化的 UserWidget 容器类（优先稳定的面板/菜单类）
 local function GetContainerClass()
     local widgets = FindAllOf("UserWidget")
     if widgets then
+        -- 第一优先：面板/视图/菜单类
         for _, w in ipairs(widgets) do
             if w and w:IsValid() then
                 local ok, cls = pcall(function() return w:GetClass() end)
                 if ok and cls and cls:IsValid() then
                     local clsName = tostring(cls:GetFName():ToString())
-                    -- 跳过抽象/特殊类
-                    if not string.find(clsName, "Abstract") and not string.find(clsName, "Default") then
-                        Log("[面板] 容器类: " .. clsName)
+                    if string.find(clsName, "Panel") or string.find(clsName, "View") or string.find(clsName, "Menu") then
+                        Log("[面板] 容器类(面板类): " .. clsName)
                         return cls
                     end
+                end
+            end
+        end
+        -- 第二优先：跳过小组件（Element/Item/Cell），取第一个普通类
+        for _, w in ipairs(widgets) do
+            if w and w:IsValid() then
+                local ok, cls = pcall(function() return w:GetClass() end)
+                if ok and cls and cls:IsValid() then
+                    local clsName = tostring(cls:GetFName():ToString())
+                    if not string.find(clsName, "Element") and not string.find(clsName, "Item") and not string.find(clsName, "Cell") then
+                        Log("[面板] 容器类(普通): " .. clsName)
+                        return cls
+                    end
+                end
+            end
+        end
+        -- 兜底：取第一个
+        for _, w in ipairs(widgets) do
+            if w and w:IsValid() then
+                local ok, cls = pcall(function() return w:GetClass() end)
+                if ok and cls and cls:IsValid() then
+                    Log("[面板] 容器类(兜底): " .. tostring(cls:GetFName():ToString()))
+                    return cls
                 end
             end
         end
@@ -138,10 +163,8 @@ local function CreatePanel()
         end
         panel = widget
 
-        -- 字体
-        if not textFont then
-            textFont = GetChineseFont()
-        end
+        -- 字体：暂不用复制的字体（可能无效导致渲染崩溃），先测稳定性
+        textFont = nil
 
         -- 构建控件树
         pcall(function()
@@ -160,7 +183,7 @@ local function CreatePanel()
             local bs = canvas:AddChildToCanvas(border)
             bs:SetAnchors({ Minimum = { X = 0, Y = 0 }, Maximum = { X = 0, Y = 0 } })
             bs:SetPosition({ X = 30, Y = 30 })
-            bs:SetSize({ X = 400, Y = math.min(40 + #BigMaps * 26 + 30, 600) })
+            bs:SetSize({ X = 420, Y = 40 + PAGE_SIZE * 26 + 40 })
             pcall(function()
                 border:SetBrushColor({ R = 0.1, G = 0.1, B = 0.1, A = 0.9 })
             end)
@@ -178,11 +201,10 @@ local function CreatePanel()
             end)
             vbox:AddChildToVerticalBox(title)
 
-            -- 地图列表
+            -- 地图列表（固定 12 个槽位，分页填充）
             itemTexts = {}
-            for i, m in ipairs(BigMaps) do
+            for i = 1, PAGE_SIZE do
                 local txt = ConstructWidget("/Script/UMG.TextBlock", tree)
-                txt:SetText(FText(string.format("%d. %s", i, m.name)))
                 if textFont then pcall(function() txt:SetFont(textFont) end) end
                 pcall(function()
                     txt:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 1, B = 1, A = 1 }, ColorUseRule = 0 })
@@ -193,23 +215,26 @@ local function CreatePanel()
 
             -- 提示行
             local hint = ConstructWidget("/Script/UMG.TextBlock", tree)
-            hint:SetText(FText("↑↓ 选择   回车 传送   ESC 关闭"))
+            hint:SetText(FText("↑↓ 选择   PgUp/PgDn 翻页   回车 传送   ESC 关闭"))
             if textFont then pcall(function() hint:SetFont(textFont) end) end
             pcall(function()
                 hint:SetColorAndOpacity({ SpecifiedColor = { R = 0.7, G = 0.7, B = 0.7, A = 1 }, ColorUseRule = 0 })
             end)
             vbox:AddChildToVerticalBox(hint)
 
+            Log("[面板] 构建完成，准备 AddToViewport")
             widget:AddToViewport(10000)
-            Log("[面板] 面板创建完成，共 " .. tostring(#BigMaps) .. " 个大位置")
+            Log("[面板] AddToViewport 完成，共 " .. tostring(#BigMaps) .. " 个大位置")
         end)
     end)
 end
 
 local function UpdateSelection()
     pcall(function()
+        local pageStart = (pageIndex - 1) * PAGE_SIZE + 1
         for i, txt in ipairs(itemTexts) do
-            if i == selectedIdx then
+            local absIdx = pageStart + i - 1
+            if absIdx == selectedIdx then
                 txt:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 0.8, B = 0.2, A = 1 }, ColorUseRule = 0 })
             else
                 txt:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 1, B = 1, A = 1 }, ColorUseRule = 0 })
@@ -218,24 +243,50 @@ local function UpdateSelection()
     end)
 end
 
+local function TotalPages()
+    return math.ceil(#BigMaps / PAGE_SIZE)
+end
+
+local function UpdateList()
+    pcall(function()
+        local pageStart = (pageIndex - 1) * PAGE_SIZE + 1
+        for i = 1, PAGE_SIZE do
+            local idx = pageStart + i - 1
+            local m = BigMaps[idx]
+            if m then
+                itemTexts[i]:SetText(FText(string.format("%d. %s", idx, m.name)))
+            else
+                itemTexts[i]:SetText(FText(""))
+            end
+        end
+    end)
+    UpdateSelection()
+end
+
 local function ShowPanel()
     if not panel then
         CreatePanel()
     end
     menuOpen = true
     selectedIdx = 1
+    pageIndex = 1
+    Log("[面板] ShowPanel: 开始")
     pcall(function()
         if panel and panel:IsValid() then
+            Log("[面板] ShowPanel: SetVisibility")
             panel:SetVisibility(0)  -- Visible
             local PC = FindPlayerController()
             local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
             if PC then
+                Log("[面板] ShowPanel: SetInputMode_UIOnly")
                 pcall(function() library:SetInputMode_UIOnly(PC, nil, 0, false) end)
+                Log("[面板] ShowPanel: SetShowMouseCursor")
                 pcall(function() PC:SetShowMouseCursor(true) end)
             end
         end
     end)
-    UpdateSelection()
+    Log("[面板] ShowPanel: UpdateList")
+    UpdateList()
     Log("[面板] 面板已打开")
 end
 
@@ -272,9 +323,16 @@ end)
 if not IsKeyBindRegistered(Key.UP_ARROW) then
     RegisterKeyBind(Key.UP_ARROW, function()
         if menuOpen and #BigMaps > 0 then
+            local pageStart = (pageIndex - 1) * PAGE_SIZE + 1
             selectedIdx = selectedIdx - 1
-            if selectedIdx < 1 then selectedIdx = #BigMaps end
-            UpdateSelection()
+            if selectedIdx < pageStart then
+                pageIndex = pageIndex - 1
+                if pageIndex < 1 then pageIndex = TotalPages() end
+                selectedIdx = math.min(pageIndex * PAGE_SIZE, #BigMaps)
+                UpdateList()
+            else
+                UpdateSelection()
+            end
         end
     end)
 end
@@ -282,9 +340,38 @@ end
 if not IsKeyBindRegistered(Key.DOWN_ARROW) then
     RegisterKeyBind(Key.DOWN_ARROW, function()
         if menuOpen and #BigMaps > 0 then
+            local pageEnd = math.min(pageIndex * PAGE_SIZE, #BigMaps)
             selectedIdx = selectedIdx + 1
-            if selectedIdx > #BigMaps then selectedIdx = 1 end
-            UpdateSelection()
+            if selectedIdx > pageEnd then
+                pageIndex = pageIndex + 1
+                if pageIndex > TotalPages() then pageIndex = 1 end
+                selectedIdx = (pageIndex - 1) * PAGE_SIZE + 1
+                UpdateList()
+            else
+                UpdateSelection()
+            end
+        end
+    end)
+end
+
+if not IsKeyBindRegistered(Key.PAGE_UP) then
+    RegisterKeyBind(Key.PAGE_UP, function()
+        if menuOpen then
+            pageIndex = pageIndex - 1
+            if pageIndex < 1 then pageIndex = TotalPages() end
+            selectedIdx = (pageIndex - 1) * PAGE_SIZE + 1
+            UpdateList()
+        end
+    end)
+end
+
+if not IsKeyBindRegistered(Key.PAGE_DOWN) then
+    RegisterKeyBind(Key.PAGE_DOWN, function()
+        if menuOpen then
+            pageIndex = pageIndex + 1
+            if pageIndex > TotalPages() then pageIndex = 1 end
+            selectedIdx = (pageIndex - 1) * PAGE_SIZE + 1
+            UpdateList()
         end
     end)
 end
