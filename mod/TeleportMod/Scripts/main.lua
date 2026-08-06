@@ -224,6 +224,56 @@ RegisterConsoleCommandGlobalHandler("tphelp", function(Cmd, CommandParts, Ar)
     return true
 end)
 
+-- tpmaps: 运行时读取游戏 Maps 数据表，列出全部地图 ID
+RegisterConsoleCommandGlobalHandler("tpmaps", function(Cmd, CommandParts, Ar)
+    Log("[传送调试] tpmaps 命令触发，读取 Maps 表")
+    ExecuteInGameThread(function()
+        local dt = LoadAsset("/Game/JH/Tables/Maps.Maps")
+        if not dt or not dt:IsValid() then
+            dt = StaticFindObject("/Game/JH/Tables/Maps.Maps")
+        end
+        if not dt or not dt:IsValid() then
+            Log("[传送] 无法加载 Maps 表")
+            return
+        end
+        Log("[传送] Maps 表对象: " .. tostring(dt:GetFullName()))
+
+        -- 延迟 1.5 秒再读（确保数据加载）
+        ExecuteWithDelay(1500, function()
+            -- 方法 1: GetRowNames
+            local ok, names = pcall(function()
+                return dt:GetRowNames()
+            end)
+            if ok and names then
+                local n = names:GetArrayNum()
+                Log("[传送] GetRowNames 行数: " .. tostring(n))
+                if n > 0 then
+                    names:ForEach(function(index, elem)
+                        local name = ""
+                        pcall(function() name = tostring(elem:get():ToString()) end)
+                        Log(string.format("[传送] MapID[%d]: %s", index, name))
+                    end)
+                end
+            else
+                Log("[传送] GetRowNames 失败: " .. tostring(names))
+            end
+
+            -- 方法 2: 反射读 RowMap / RowStruct
+            pcall(function()
+                local rs = dt:GetPropertyValue("RowStruct")
+                Log("[传送] RowStruct: " .. tostring(rs))
+            end)
+            pcall(function()
+                local rm = dt:GetPropertyValue("RowMap")
+                Log("[传送] RowMap 类型: " .. tostring(rm and rm:type() or "nil"))
+            end)
+
+            Log("[传送] Maps 表读取完成")
+        end)
+    end)
+    return true
+end)
+
 -- ============ 快捷键 ============
 
 -- F6: 直接传送到神龙岛主场景（测试）
