@@ -1,20 +1,22 @@
 --[[
-    逸剑风云决 · 全地图传送 mod (TeleportMod)
+    逸剑风云决 · 世界地图传送面板 (TeleportMod) 最终版
     基于 UE4SS 实验版 + UE4.26
 
-    原理：游戏自带 GM 命令 tomap <地图ID> 是官方传送功能。
-    本 mod 把 Maps 表解析出的 地图ID→中文地名 集成进来，
-    让你用中文地名搜索，自动调用 tomap 传送。
-
-    用法（按 `~` 或 F10 打开 UE 控制台）：
-      tpm <地名关键词>    搜索地图并传送（如: tpm 姑苏城 / tpm 天剑宗）
-      tplist [关键词]     列出全部/匹配的地图
-      tphelp              帮助
-    快捷键：
-      F8                  传送到姑苏城（测试）
+    功能：
+      F2        呼出/关闭传送面板（世界地图大位置，鼠标点选或键盘选择）
+      传送      tomap <ID>（游戏官方传送）
+    兜底：
+      F10 控制台输入地名/拼音/缩写 直接传送（601 个命令已注册）
 ]]
 
--- ============ 工具函数 ============
+-- ============ 数据 ============
+
+local ok_big, BigMaps = pcall(require, "bigmap_data")
+if not ok_big or type(BigMaps) ~= "table" then
+    BigMaps = {}
+end
+
+-- ============ 工具 ============
 
 local function Log(msg)
     print(msg .. "\n")
@@ -25,203 +27,298 @@ local function FindPlayerController()
     if not PCs then
         PCs = FindAllOf("Controller")
     end
-    if not PCs then
-        return nil
-    end
+    if not PCs then return nil end
     for _, PC in pairs(PCs) do
-        if PC:IsValid() then
+        if PC and PC:IsValid() then
             return PC
         end
     end
     return nil
 end
 
-local function ScreenMsg(msg)
-    local PC = FindPlayerController()
-    if PC and PC:IsValid() then
-        pcall(function()
-            PC:ClientMessage(msg, FName("None"), 5.0)
-        end)
-    end
-end
-
--- ============ 地图数据（ID → 地名） ============
-
-local ok_maps, Maps = pcall(require, "maps_pinyin")
-if not ok_maps or type(Maps) ~= "table" then
-    Log("[传送] 警告：maps_pinyin.lua 加载失败")
-    Maps = {}
-end
-Log(string.format("[传送] 已加载 %d 个地图（ID→地名→拼音）", #Maps))
-
--- ============ 调用游戏 tomap 命令 ============
-
 local function CallTomap(mapId)
-    Log(string.format("[传送] 调用 tomap %d", mapId))
+    Log(string.format("[传送] tomap %d", mapId))
     ExecuteInGameThread(function()
         local PC = FindPlayerController()
         if not PC or not PC:IsValid() then
             Log("[传送] 错误：找不到 PlayerController")
             return
         end
-        -- 方式1: ProcessConsoleExec 执行 tomap
-        local ok = pcall(function()
+        pcall(function()
             PC:ProcessConsoleExec("tomap " .. tostring(mapId), nil, PC)
+            Log("[传送] tomap 已发送: " .. tostring(mapId))
         end)
-        if ok then
-            Log("[传送] tomap 命令已发送: " .. tostring(mapId))
-        else
-            Log("[传送] ProcessConsoleExec 调用失败")
-            -- 方式2: JHNeoUISubsystem 命令分发
-            pcall(function()
-                local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
-                if JH and JH:IsValid() then
-                    JH:ProcessConsoleExec("tomap " .. tostring(mapId), nil, PC)
+    end)
+end
+
+-- ============ 面板状态 ============
+
+local panel = nil
+local menuOpen = false
+local selectedIdx = 1
+local itemTexts = {}
+local textFont = nil
+
+-- 从游戏已有 TextBlock 复制中文字体
+local function GetChineseFont()
+    local font = nil
+    pcall(function()
+        local texts = FindAllOf("TextBlock")
+        if texts then
+            for _, t in ipairs(texts) do
+                if t and t:IsValid() then
+                    font = t.Font
+                    if font then break end
                 end
+            end
+        end
+    end)
+    if font then
+        Log("[面板] 已获取中文字体")
+    end
+    return font
+end
+
+-- 找一个可实例化的 UserWidget 容器类
+local function GetContainerClass()
+    local widgets = FindAllOf("UserWidget")
+    if widgets then
+        for _, w in ipairs(widgets) do
+            if w and w:IsValid() then
+                local ok, cls = pcall(function() return w:GetClass() end)
+                if ok and cls and cls:IsValid() then
+                    local clsName = tostring(cls:GetFName():ToString())
+                    -- 跳过抽象/特殊类
+                    if not string.find(clsName, "Abstract") and not string.find(clsName, "Default") then
+                        Log("[面板] 容器类: " .. clsName)
+                        return cls
+                    end
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function ConstructWidget(classPath, outer)
+    local cls = StaticFindObject(classPath)
+    if not cls then return nil end
+    local ok, w = pcall(function()
+        return StaticConstructObject(cls, outer, 0, 0, 0, nil, false, false, nil)
+    end)
+    if ok and w then return w end
+    return nil
+end
+
+-- 创建面板
+local function CreatePanel()
+    ExecuteInGameThread(function()
+        if panel and panel:IsValid() then return end
+
+        local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+        if not library or not library:IsValid() then
+            Log("[面板] WidgetBlueprintLibrary 不可用")
+            return
+        end
+
+        local containerCls = GetContainerClass()
+        if not containerCls then
+            Log("[面板] 找不到容器类")
+            return
+        end
+
+        local PC = FindPlayerController()
+        local world = PC and PC:GetWorld()
+
+        -- 用 UWidgetBlueprintLibrary:Create 创建（传具体类，不崩）
+        local widget = library:Create(world, containerCls, PC)
+        if not widget or not widget:IsValid() then
+            Log("[面板] Create 失败")
+            return
+        end
+        panel = widget
+
+        -- 字体
+        if not textFont then
+            textFont = GetChineseFont()
+        end
+
+        -- 构建控件树
+        pcall(function()
+            local tree = widget.WidgetTree
+
+            -- CanvasPanel 根
+            local canvas = ConstructWidget("/Script/UMG.CanvasPanel", tree)
+            if not canvas then
+                Log("[面板] CanvasPanel 创建失败")
+                return
+            end
+            tree.RootWidget = canvas
+
+            -- 背景 Border（半透明黑）
+            local border = ConstructWidget("/Script/UMG.Border", tree)
+            local bs = canvas:AddChildToCanvas(border)
+            bs:SetAnchors({ Minimum = { X = 0, Y = 0 }, Maximum = { X = 0, Y = 0 } })
+            bs:SetPosition({ X = 30, Y = 30 })
+            bs:SetSize({ X = 400, Y = math.min(40 + #BigMaps * 26 + 30, 600) })
+            pcall(function()
+                border:SetBrushColor({ R = 0.1, G = 0.1, B = 0.1, A = 0.9 })
             end)
+
+            -- VerticalBox
+            local vbox = ConstructWidget("/Script/UMG.VerticalBox", tree)
+            border:SetContent(vbox)
+
+            -- 标题
+            local title = ConstructWidget("/Script/UMG.TextBlock", tree)
+            title:SetText(FText("世 界 地 图 传 送"))
+            if textFont then pcall(function() title:SetFont(textFont) end) end
+            pcall(function()
+                title:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 0.85, B = 0.3, A = 1 }, ColorUseRule = 0 })
+            end)
+            vbox:AddChildToVerticalBox(title)
+
+            -- 地图列表
+            itemTexts = {}
+            for i, m in ipairs(BigMaps) do
+                local txt = ConstructWidget("/Script/UMG.TextBlock", tree)
+                txt:SetText(FText(string.format("%d. %s", i, m.name)))
+                if textFont then pcall(function() txt:SetFont(textFont) end) end
+                pcall(function()
+                    txt:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 1, B = 1, A = 1 }, ColorUseRule = 0 })
+                end)
+                vbox:AddChildToVerticalBox(txt)
+                itemTexts[i] = txt
+            end
+
+            -- 提示行
+            local hint = ConstructWidget("/Script/UMG.TextBlock", tree)
+            hint:SetText(FText("↑↓ 选择   回车 传送   ESC 关闭"))
+            if textFont then pcall(function() hint:SetFont(textFont) end) end
+            pcall(function()
+                hint:SetColorAndOpacity({ SpecifiedColor = { R = 0.7, G = 0.7, B = 0.7, A = 1 }, ColorUseRule = 0 })
+            end)
+            vbox:AddChildToVerticalBox(hint)
+
+            widget:AddToViewport(10000)
+            Log("[面板] 面板创建完成，共 " .. tostring(#BigMaps) .. " 个大位置")
+        end)
+    end)
+end
+
+local function UpdateSelection()
+    pcall(function()
+        for i, txt in ipairs(itemTexts) do
+            if i == selectedIdx then
+                txt:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 0.8, B = 0.2, A = 1 }, ColorUseRule = 0 })
+            else
+                txt:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 1, B = 1, A = 1 }, ColorUseRule = 0 })
+            end
         end
     end)
 end
 
--- ============ 搜索 ============
-
-local function SearchMaps(kw)
-    local k = string.lower(kw or "")
-    local out = {}
-    for _, m in ipairs(Maps) do
-        if string.find(string.lower(m.name), k, 1, true) then
-            table.insert(out, m)
+local function ShowPanel()
+    if not panel then
+        CreatePanel()
+    end
+    menuOpen = true
+    selectedIdx = 1
+    pcall(function()
+        if panel and panel:IsValid() then
+            panel:SetVisibility(0)  -- Visible
+            local PC = FindPlayerController()
+            local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+            if PC then
+                pcall(function() library:SetInputMode_UIOnly(PC, nil, 0, false) end)
+                pcall(function() PC:SetShowMouseCursor(true) end)
+            end
         end
-    end
-    return out
+    end)
+    UpdateSelection()
+    Log("[面板] 面板已打开")
 end
 
--- ============ 命令处理 ============
-
-local function PrintHelp()
-    Log("========================================")
-    Log(" 逸剑风云决 全地图传送 mod")
-    Log(" 原理：调用游戏官方 tomap <ID> 命令")
-    Log(" tpm <地名>     搜索并传送（如 tpm 姑苏城）")
-    Log(" tplist [关键词] 列出地图")
-    Log(" tphelp         帮助")
-    Log(" F8             传送到姑苏城(测试)")
-    Log("========================================")
+local function HidePanel()
+    menuOpen = false
+    pcall(function()
+        if panel and panel:IsValid() then
+            panel:SetVisibility(1)  -- Collapsed
+            local PC = FindPlayerController()
+            local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+            if PC then
+                pcall(function() library:SetInputMode_GameOnly(PC) end)
+                pcall(function() PC:SetShowMouseCursor(false) end)
+            end
+        end
+    end)
+    Log("[面板] 面板已关闭")
 end
 
-local function ListMaps(list, title)
-    Log("----------------------------------------")
-    Log(title)
-    for i, m in ipairs(list) do
-        Log(string.format(" %d. [%s] %s", i, tostring(m.id), m.name))
-    end
-    Log(string.format("共 %d 项。输入 tpm <名称> 传送", #list))
-    Log("----------------------------------------")
+-- ============ 键盘导航 ============
+
+if not IsKeyBindRegistered(Key.UP_ARROW) then
+    RegisterKeyBind(Key.UP_ARROW, function()
+        if menuOpen and #BigMaps > 0 then
+            selectedIdx = selectedIdx - 1
+            if selectedIdx < 1 then selectedIdx = #BigMaps end
+            UpdateSelection()
+        end
+    end)
 end
 
-local function HandleTpm(CommandParts)
-    local kw = CommandParts and (CommandParts[2] or CommandParts[1])
-    if not kw or kw == "" or kw == "tpm" then
-        Log("[传送] 用法: tpm <地名>  （如 tpm 姑苏城）")
-        return
-    end
-    local matches = SearchMaps(tostring(kw))
-    if #matches == 0 then
-        Log("[传送] 未找到匹配「" .. kw .. "」的地图")
-        ScreenMsg("[传送] 未找到地图: " .. kw)
-        return
-    elseif #matches == 1 then
-        Log(string.format("[传送] 匹配: [%d] %s", matches[1].id, matches[1].name))
-        CallTomap(matches[1].id)
-        return
-    else
-        ListMaps(matches, string.format("[传送] 匹配「%s」%d 个，请细化：", kw, #matches))
-    end
+if not IsKeyBindRegistered(Key.DOWN_ARROW) then
+    RegisterKeyBind(Key.DOWN_ARROW, function()
+        if menuOpen and #BigMaps > 0 then
+            selectedIdx = selectedIdx + 1
+            if selectedIdx > #BigMaps then selectedIdx = 1 end
+            UpdateSelection()
+        end
+    end)
 end
 
-local function HandleTplist(CommandParts)
-    local kw = CommandParts and (CommandParts[2] or CommandParts[1])
-    if not kw or kw == "" or kw == "tplist" then
-        ListMaps(Maps, "[传送] 全部地图列表")
-        return
-    end
-    local matches = SearchMaps(tostring(kw))
-    ListMaps(matches, string.format("[传送] 匹配「%s」的地图", kw))
-end
-
--- ============ 注册命令 ============
-
-RegisterConsoleCommandGlobalHandler("tpm", function(Cmd, CommandParts, Ar)
-    Log("[传送调试] tpm 触发: " .. tostring(Cmd))
-    HandleTpm(CommandParts)
-    return true
-end)
-
-RegisterConsoleCommandGlobalHandler("tplist", function(Cmd, CommandParts, Ar)
-    HandleTplist(CommandParts)
-    return true
-end)
-
-RegisterConsoleCommandGlobalHandler("tphelp", function(Cmd, CommandParts, Ar)
-    PrintHelp()
-    return true
-end)
-
--- ============ 自动注册直接传送命令 ============
--- 输入地名/拼音/唯一缩写即可直接传送，无需 tpm 前缀
-
--- 归并同名（同一地名的多个入口，取第一个 ID）
-local byName = {}
-local order = {}
-for _, m in ipairs(Maps) do
-    if m.name and not byName[m.name] then
-        byName[m.name] = m
-        table.insert(order, m.name)
-    end
-end
-
--- 检查首字母缩写冲突（不同地名同缩写）
-local abbrCount = {}
-for _, m in pairs(byName) do
-    if m.abbr then
-        abbrCount[m.abbr] = (abbrCount[m.abbr] or 0) + 1
-    end
-end
-
-local registered = {}
-local regCount = 0
-local function RegCmd(cmdname, m)
-    if cmdname and cmdname ~= "" and not registered[cmdname] then
-        local ok = pcall(function()
-            RegisterConsoleCommandGlobalHandler(cmdname, function()
-                Log(string.format("[传送] 「%s」-> 传送到 %s (tomap %d)", cmdname, m.name, m.id))
+if not IsKeyBindRegistered(Key.RETURN) then
+    RegisterKeyBind(Key.RETURN, function()
+        if menuOpen then
+            local m = BigMaps[selectedIdx]
+            if m then
+                Log("[传送] 面板选择: " .. m.name .. " (ID " .. tostring(m.id) .. ")")
                 CallTomap(m.id)
-            end)
-        end)
-        if ok then
-            registered[cmdname] = true
-            regCount = regCount + 1
+                HidePanel()
+            end
         end
-    end
+    end)
 end
 
-for _, name in ipairs(order) do
-    local m = byName[name]
-    RegCmd(m.name, m)      -- 中文名
-    RegCmd(m.pinyin, m)    -- 拼音全拼
-    if abbrCount[m.abbr] == 1 then  -- 唯一缩写
-        RegCmd(m.abbr, m)
-    end
+if not IsKeyBindRegistered(Key.ESCAPE) then
+    RegisterKeyBind(Key.ESCAPE, function()
+        if menuOpen then HidePanel() end
+    end)
 end
 
-Log(string.format("[传送] 已注册 %d 个直接传送命令（输入地名/拼音/唯一缩写即可传送）", regCount))
+-- ============ F2 呼出/关闭 ============
 
--- ============ F1 GM 命令拦截（hook exec 通道） ============
+if not IsKeyBindRegistered(Key.F2) then
+    RegisterKeyBind(Key.F2, function()
+        Log("[面板] F2 按下")
+        if menuOpen then
+            HidePanel()
+        else
+            ShowPanel()
+        end
+    end)
+end
+
+-- ============ 兜底：F10 控制台地名传送 ============
+
+-- 加载全部地图拼音数据（F10 控制台输入地名/拼音/缩写传送）
+local ok_maps, AllMaps = pcall(require, "maps_pinyin")
+if not ok_maps or type(AllMaps) ~= "table" then AllMaps = {} end
 
 local function SearchMapsAll(kw)
     local k = string.lower(kw or "")
     local out = {}
-    for _, m in ipairs(Maps) do
+    for _, m in ipairs(AllMaps) do
         local n = string.lower(m.name or "")
         local p = string.lower(m.pinyin or "")
         local a = string.lower(m.abbr or "")
@@ -232,282 +329,59 @@ local function SearchMapsAll(kw)
     return out
 end
 
--- 尝试处理地图命令：输入匹配地图（同地名归并）则传送
-local function TryHandleMapCmd(cmd)
-    if not cmd then return false end
-    local kw = tostring(cmd):gsub("^%s+", ""):gsub("%s+$", "")
-    if kw == "" then return false end
-    -- 忽略游戏自身命令（含空格参数的一般是游戏命令）
-    if string.find(kw, " ") then return false end
-    -- 跳过已知游戏命令
-    local known = { tomap = true, addmoney = true, additem = true, addskill = true, addjm = true, addsexp = true, setspeed = true, moveto = true, tpm = true, tphelp = true, tplist = true }
-    if known[kw] then return false end
-    local matches = SearchMapsAll(kw)
-    if #matches >= 1 then
-        -- 检查是否同一地名（多个入口）
-        local firstName = matches[1].name
-        local allSame = true
-        for _, m in ipairs(matches) do
-            if m.name ~= firstName then
-                allSame = false
-                break
-            end
-        end
-        if allSame then
-            Log("[传送] 拦截「" .. kw .. "」-> 传送到 " .. firstName .. " (ID " .. tostring(matches[1].id) .. ")")
-            CallTomap(matches[1].id)
-            return true
-        elseif #matches <= 10 then
-            -- 不同地名，列出让用户细化
-            Log("[传送] 「" .. kw .. "」匹配多个地方:")
-            for _, m in ipairs(matches) do
-                Log(string.format("[传送]   %s", m.name))
-            end
-            ScreenMsg("匹配多个: " .. matches[1].name .. " 等，请输全名")
-        end
+-- 注册每个地名/拼音/唯一缩写为直接传送命令
+local byName = {}
+local order = {}
+for _, m in ipairs(AllMaps) do
+    if m.name and not byName[m.name] then
+        byName[m.name] = m
+        table.insert(order, m.name)
     end
-    return false
 end
-
--- 1) ULocalPlayer::Exec hook
-RegisterULocalPlayerExecPreHook(function(Context, InWorld, Cmd, Ar)
-    Log("[hook] ULocalPlayerExec 输入: " .. tostring(Cmd))
-    if TryHandleMapCmd(Cmd) then
-        Log("[传送] 通过 ULocalPlayer::Exec 拦截")
-        return true, false  -- 处理完成，阻止原始执行
-    end
-end)
-
--- 2) ProcessConsoleExec hook
-RegisterProcessConsoleExecPreHook(function(Context, Cmd, CommandParts, Ar, Executor)
-    Log("[hook] ProcessConsoleExec 输入: " .. tostring(Cmd))
-    if TryHandleMapCmd(Cmd) then
-        Log("[传送] 通过 ProcessConsoleExec 拦截")
-        return true
-    end
-end)
-
--- 3) CallFunctionByNameWithArguments hook
-RegisterCallFunctionByNameWithArgumentsPreHook(function(Context, Str, Ar, Executor, bForce)
-    Log("[hook] CallFunctionByName 输入: " .. tostring(Str))
-    if TryHandleMapCmd(Str) then
-        Log("[传送] 通过 CallFunctionByName 拦截")
-        return true
-    end
-end)
-
-Log("[传送] 已安装 F1 命令拦截钩子（输入地图名/拼音直接传送）")
-
--- ============ 诊断命令 ============
-
--- tpinfo: dump JHNeoUISubsystem 方法 + 测试 tomap 调用
-RegisterConsoleCommandGlobalHandler("tpinfo", function(Cmd, CommandParts, Ar)
-    Log("[诊断] tpinfo 开始")
-    ExecuteInGameThread(function()
-        -- 1. dump JHNeoUISubsystem 的所有 UFunction
-        pcall(function()
-            local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
-            if JH and JH:IsValid() then
-                local cls = JH:GetClass()
-                Log("[诊断] JHNeoUISubsystem 类: " .. tostring(cls and cls:GetFName():ToString() or "?"))
-                local cnt = 0
-                if cls then
-                    cls:ForEachFunction(function(fn)
-                        cnt = cnt + 1
-                        Log(string.format("[诊断]   [FN] %s", fn:GetFName():ToString()))
-                    end)
-                end
-                Log("[诊断] JHNeoUISubsystem 函数数: " .. tostring(cnt))
-            else
-                Log("[诊断] JHNeoUISubsystem 未找到")
-            end
-        end)
-
-        -- 2. 测试 tomap 调用（ProcessConsoleExec）
-        pcall(function()
-            local PC = FindPlayerController()
-            if PC and PC:IsValid() then
-                Log("[诊断] 发送 tomap 27 (姑苏城)...")
-                PC:ProcessConsoleExec("tomap 27", nil, PC)
-                Log("[诊断] tomap 27 已发送")
-            else
-                Log("[诊断] 无 PlayerController")
-            end
-        end)
-
-        -- 3. dump 关键函数参数签名（ChangeSceneMapDDD / OpenCourierStation / OpenWorldMap）
-        Log("[诊断] === 关键函数参数 dump ===")
-        pcall(function()
-            local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
-            if JH and JH:IsValid() then
-                local cls = JH:GetClass()
-                local targets = { "ChangeSceneMapDDD", "OpenCourierStation", "OpenWorldMap", "OpenCourierStationByNPC", "BPSimpleAlert" }
-                for _, tname in ipairs(targets) do
-                    cls:ForEachFunction(function(fn)
-                        local fname = fn:GetFName():ToString()
-                        if fname == tname then
-                            Log("[诊断] === 函数: " .. fname .. " ===")
-                            fn:ForEachProperty(function(prop)
-                                Log(string.format("[诊断]   参数/属性: %s (%s)", prop:GetFName():ToString(), prop:GetClass():GetFName():ToString()))
-                            end)
-                        end
-                    end)
-                end
-            end
-        end)
-        Log("[诊断] === 参数 dump 结束 ===")
-    end)
-    return true
-end)
-
--- ============ 驿站表读写测试 ============
-
-RegisterConsoleCommandGlobalHandler("tpcourier", function(Cmd, CommandParts, Ar)
-    Log("[驿站] === 读取驿站表 ===")
-    ExecuteInGameThread(function()
-        local dt = LoadAsset("/Game/JH/Tables/CourierStation.CourierStation")
-        if not dt or not dt:IsValid() then
-            Log("[驿站] 加载失败")
-            return
-        end
-        Log("[驿站] 表: " .. dt:GetFullName())
-
-        -- RowStruct（行结构字段）
-        pcall(function()
-            local rs = dt:GetPropertyValue("RowStruct")
-            Log("[驿站] RowStruct: " .. tostring(rs))
-            if rs and rs:IsValid() then
-                local cnt = 0
-                rs:ForEachProperty(function(prop)
-                    cnt = cnt + 1
-                    Log(string.format("[驿站]   字段: %s (%s)", prop:GetFName():ToString(), prop:GetClass():GetFName():ToString()))
-                end)
-                Log("[驿站] RowStruct 字段数: " .. tostring(cnt))
-            end
-        end)
-
-        -- GetRowNames
-        pcall(function()
-            local names = dt:GetRowNames()
-            Log("[驿站] GetRowNames 类型: " .. tostring(names and names:type() or "nil"))
-            if names then
-                local cnt = 0
-                names:ForEach(function(idx, elem)
-                    cnt = cnt + 1
-                    local nm = ""
-                    pcall(function() nm = tostring(elem:get():ToString()) end)
-                    Log(string.format("[驿站] Row[%d] = %s", idx, nm))
-                end)
-                Log("[驿站] 遍历到 " .. tostring(cnt) .. " 行")
-            end
-        end)
-        Log("[驿站] === 读取结束 ===")
-    end)
-    return true
-end)
-
--- ============ dump Maps 表全部行名 ============
-
-RegisterConsoleCommandGlobalHandler("tprows", function(Cmd, CommandParts, Ar)
-    Log("[rows] === dump Maps 表全部行名 ===")
-    ExecuteInGameThread(function()
-        local dt = LoadAsset("/Game/JH/Tables/Maps.Maps")
-        if not dt or not dt:IsValid() then
-            Log("[rows] 加载失败")
-            return
-        end
-        Log("[rows] 表: " .. dt:GetFullName())
-
-        -- 方法1: GetRowNames + ForEach
-        pcall(function()
-            local names = dt:GetRowNames()
-            Log("[rows] GetRowNames 返回: " .. tostring(names))
-            if names then
-                Log("[rows] 类型: " .. tostring(names:type()))
-                local cnt = 0
-                names:ForEach(function(idx, elem)
-                    cnt = cnt + 1
-                    local nm = ""
-                    pcall(function() nm = tostring(elem:get():ToString()) end)
-                    Log(string.format("[rows] Row[%d] = %s", idx, nm))
-                end)
-                Log("[rows] GetRowNames 遍历到 " .. tostring(cnt))
-            end
-        end)
-
-        -- 方法2: RowMap 反射
-        pcall(function()
-            local rm = dt:GetPropertyValue("RowMap")
-            Log("[rows] RowMap: " .. tostring(rm) .. " 类型: " .. tostring(rm and rm:type() or "nil"))
-        end)
-
-        Log("[rows] === dump 结束 ===")
-    end)
-    return true
-end)
-
--- ============ 快捷键 ============
-
--- 打开游戏驿站面板（文字列表传送）的函数
-local function OpenCourierPanel()
-    Log("[传送] 打开驿站面板")
-    ExecuteInGameThread(function()
-        pcall(function()
-            local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
-            if JH and JH:IsValid() then
-                JH:OpenCourierStation(0)
-                Log("[传送] 已调用 OpenCourierStation(0)")
-            else
-                Log("[传送] JHNeoUISubsystem 未找到")
-            end
-        end)
-    end)
+local abbrCount = {}
+for _, m in pairs(byName) do
+    if m.abbr then abbrCount[m.abbr] = (abbrCount[m.abbr] or 0) + 1 end
 end
-
--- F2: 打开驿站面板（测试文字列表 UI）
-if not IsKeyBindRegistered(Key.F2) then
-    RegisterKeyBind(Key.F2, function()
-        Log("[传送] F2 按下")
-        OpenCourierPanel()
-    end)
-end
-
--- F8: 传送到姑苏城 (ID 27)
-if not IsKeyBindRegistered(Key.F8) then
-    RegisterKeyBind(Key.F8, function()
-        Log("[传送] F8 按下，传送到姑苏城")
-        CallTomap(27)
-    end)
-end
-
--- ============ HUD 绘制（UI 面板基础） ============
--- hook 游戏 HUD 的 ReceiveDrawHUD，用 Canvas::DrawText 绘制文字
-local hudHookInstalled = false
-local function InstallHUDDraw()
-    if hudHookInstalled then return end
-    hudHookInstalled = true
-    local ok = pcall(function()
-        RegisterHook("/Script/Engine.HUD:ReceiveDrawHUD", function(self, Canvas)
-            Log("[HUD] ReceiveDrawHUD 触发, Canvas=" .. tostring(Canvas))
-            if not Canvas then return end
-            pcall(function()
-                -- 绘制测试文字
-                local font = StaticFindObject("/Engine/EngineFonts/Roboto.Roboto")
-                if not font or not font:IsValid() then
-                    font = LoadAsset("/Engine/EngineFonts/Roboto.Roboto")
-                end
-                if font and font:IsValid() then
-                    Canvas:DrawText(font, "传送面板测试", 150, 150, 1.0, 1.0)
-                end
+local registered = {}
+local regCount = 0
+local function RegCmd(cmdname, m)
+    if cmdname and cmdname ~= "" and not registered[cmdname] then
+        pcall(function()
+            RegisterConsoleCommandGlobalHandler(cmdname, function()
+                Log(string.format("[传送] 「%s」-> %s (tomap %d)", cmdname, m.name, m.id))
+                CallTomap(m.id)
             end)
         end)
-        Log("[HUD] ReceiveDrawHUD hook 安装成功")
-    end)
-    if not ok then
-        Log("[HUD] hook 安装失败")
+        registered[cmdname] = true
+        regCount = regCount + 1
     end
 end
--- 延迟到游戏世界加载后安装（HUD 存在时）
-ExecuteWithDelay(10000, InstallHUDDraw)
+for _, name in ipairs(order) do
+    local m = byName[name]
+    RegCmd(m.name, m)
+    RegCmd(m.pinyin, m)
+    if abbrCount[m.abbr] == 1 then RegCmd(m.abbr, m) end
+end
 
-Log("[传送] 传送 mod 加载完成！F2=驿站面板 / F1输入地名=传送 / HUD绘制测试中")
+-- 保留 tpm 搜索命令
+RegisterConsoleCommandGlobalHandler("tpm", function(Cmd, CommandParts, Ar)
+    local kw = CommandParts and (CommandParts[2] or CommandParts[1])
+    if not kw or kw == "tpm" then
+        Log("[传送] 用法: tpm <地名>（如 tpm 姑苏城）")
+        return true
+    end
+    local matches = SearchMapsAll(tostring(kw))
+    if #matches == 1 then
+        CallTomap(matches[1].id)
+    elseif #matches == 0 then
+        Log("[传送] 未找到「" .. tostring(kw) .. "」")
+    else
+        Log("[传送] 匹配多个：")
+        for _, m in ipairs(matches) do
+            Log("  " .. m.name)
+        end
+    end
+    return true
+end)
+
+Log("[传送] 世界地图传送面板已就绪：F2 打开面板 / F10 控制台输入地名传送")
