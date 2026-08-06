@@ -232,24 +232,46 @@ local function SearchMapsAll(kw)
     return out
 end
 
--- 尝试处理地图命令：输入匹配唯一地图则传送
+-- 尝试处理地图命令：输入匹配地图（同地名归并）则传送
 local function TryHandleMapCmd(cmd)
     if not cmd then return false end
     local kw = tostring(cmd):gsub("^%s+", ""):gsub("%s+$", "")
     if kw == "" then return false end
     -- 忽略游戏自身命令（含空格参数的一般是游戏命令）
     if string.find(kw, " ") then return false end
+    -- 跳过已知游戏命令
+    local known = { tomap = true, addmoney = true, additem = true, addskill = true, addjm = true, addsexp = true, setspeed = true, moveto = true, tpm = true, tphelp = true, tplist = true }
+    if known[kw] then return false end
     local matches = SearchMapsAll(kw)
-    if #matches == 1 then
-        Log("[传送] 拦截「" .. kw .. "」-> 传送到 " .. matches[1].name .. " (ID " .. tostring(matches[1].id) .. ")")
-        CallTomap(matches[1].id)
-        return true
+    if #matches >= 1 then
+        -- 检查是否同一地名（多个入口）
+        local firstName = matches[1].name
+        local allSame = true
+        for _, m in ipairs(matches) do
+            if m.name ~= firstName then
+                allSame = false
+                break
+            end
+        end
+        if allSame then
+            Log("[传送] 拦截「" .. kw .. "」-> 传送到 " .. firstName .. " (ID " .. tostring(matches[1].id) .. ")")
+            CallTomap(matches[1].id)
+            return true
+        elseif #matches <= 10 then
+            -- 不同地名，列出让用户细化
+            Log("[传送] 「" .. kw .. "」匹配多个地方:")
+            for _, m in ipairs(matches) do
+                Log(string.format("[传送]   %s", m.name))
+            end
+            ScreenMsg("匹配多个: " .. matches[1].name .. " 等，请输全名")
+        end
     end
     return false
 end
 
 -- 1) ULocalPlayer::Exec hook
 RegisterULocalPlayerExecPreHook(function(Context, InWorld, Cmd, Ar)
+    Log("[hook] ULocalPlayerExec 输入: " .. tostring(Cmd))
     if TryHandleMapCmd(Cmd) then
         Log("[传送] 通过 ULocalPlayer::Exec 拦截")
         return true, false  -- 处理完成，阻止原始执行
@@ -258,6 +280,7 @@ end)
 
 -- 2) ProcessConsoleExec hook
 RegisterProcessConsoleExecPreHook(function(Context, Cmd, CommandParts, Ar, Executor)
+    Log("[hook] ProcessConsoleExec 输入: " .. tostring(Cmd))
     if TryHandleMapCmd(Cmd) then
         Log("[传送] 通过 ProcessConsoleExec 拦截")
         return true
@@ -266,6 +289,7 @@ end)
 
 -- 3) CallFunctionByNameWithArguments hook
 RegisterCallFunctionByNameWithArgumentsPreHook(function(Context, Str, Ar, Executor, bForce)
+    Log("[hook] CallFunctionByName 输入: " .. tostring(Str))
     if TryHandleMapCmd(Str) then
         Log("[传送] 通过 CallFunctionByName 拦截")
         return true
@@ -416,32 +440,34 @@ if not IsKeyBindRegistered(Key.F8) then
     end)
 end
 
--- ============ HUD Canvas 绘制测试（UI 方案验证） ============
-local hudHooked = false
-local function SetupHUDDraw()
-    if hudHooked then return end
-    hudHooked = true
+-- ============ HUD 绘制（UI 面板基础） ============
+-- hook 游戏 HUD 的 ReceiveDrawHUD，用 Canvas::DrawText 绘制文字
+local hudHookInstalled = false
+local function InstallHUDDraw()
+    if hudHookInstalled then return end
+    hudHookInstalled = true
     local ok = pcall(function()
-        RegisterHook("/Script/Engine.HUD:PostRender", function(self, Canvas)
-            if not Canvas or not Canvas:IsValid() then return end
+        RegisterHook("/Script/Engine.HUD:ReceiveDrawHUD", function(self, Canvas)
+            Log("[HUD] ReceiveDrawHUD 触发, Canvas=" .. tostring(Canvas))
+            if not Canvas then return end
             pcall(function()
+                -- 绘制测试文字
                 local font = StaticFindObject("/Engine/EngineFonts/Roboto.Roboto")
                 if not font or not font:IsValid() then
                     font = LoadAsset("/Engine/EngineFonts/Roboto.Roboto")
                 end
                 if font and font:IsValid() then
-                    Canvas:DrawText(font, "TeleportMod UI 测试 OK", 200, 200, 1.0, 1.0)
-                else
-                    Canvas:DrawText(nil, "UI test (no font)", 200, 200, 1.0, 1.0)
+                    Canvas:DrawText(font, "传送面板测试", 150, 150, 1.0, 1.0)
                 end
             end)
         end)
-        Log("[HUD] PostRender hook 安装成功")
+        Log("[HUD] ReceiveDrawHUD hook 安装成功")
     end)
     if not ok then
         Log("[HUD] hook 安装失败")
     end
 end
-ExecuteWithDelay(3000, SetupHUDDraw)
+-- 延迟到游戏世界加载后安装（HUD 存在时）
+ExecuteWithDelay(10000, InstallHUDDraw)
 
 Log("[传送] 传送 mod 加载完成！F2=驿站面板 / F1输入地名=传送 / HUD绘制测试中")
