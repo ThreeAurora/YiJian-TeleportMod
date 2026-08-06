@@ -118,6 +118,34 @@ RegisterConsoleCommandGlobalHandler("tpadd2", function(Cmd, CommandParts, Ar)
     return true
 end)
 
+-- 读新行完整字段 + 行名（确认注入行完整 + 界面过滤原因）
+RegisterConsoleCommandGlobalHandler("tpcheck2", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local dt = LoadAsset("/Game/JH/Tables/CourierStation.CourierStation")
+            if not dt or not dt:IsValid() then return end
+            local cnt = 0
+            local shown = 0
+            dt:ForEachRow(function(rowName, rowData)
+                cnt = cnt + 1
+                if shown < 25 then
+                    shown = shown + 1
+                    pcall(function()
+                        local nm = tostring(rowData.DisplayName:ToString())
+                        local mid = tostring(rowData.MapId)
+                        local region = tostring(rowData.Region)
+                        local price = tostring(rowData.Price)
+                        Log(string.format("[chk] 行名=%s | 名称=%s | MapId=%s | 区域=%s | 价格=%s",
+                            tostring(rowName), nm, mid, region, price))
+                    end)
+                end
+            end)
+            Log("[chk] 总行数=" .. tostring(cnt))
+        end)
+    end)
+    return true
+end)
+
 -- 确认驿站表注入情况
 RegisterConsoleCommandGlobalHandler("tpcheck", function(Cmd, CommandParts, Ar)
     ExecuteInGameThread(function()
@@ -322,19 +350,26 @@ local function CreatePanel()
             pcall(function() title:SetText(FText(string.format("WORLD MAP TELEPORT (%d)", #BigMaps))) end)
             scroll:AddChild(title)
 
-            -- 全部地图（创建时立即 SetText，A-Z 顺序，不依赖 UpdateList）
+            -- 全部地图（每个一个按钮，鼠标点击直接传送）
             itemTexts = {}
             for i, m in ipairs(BigMaps) do
+                local btn = ConstructWidget("/Script/UMG.Button", tree)
                 local txt = ConstructWidget("/Script/UMG.TextBlock", tree)
                 pcall(function()
-                    local prefix = ""
-                    if i == 1 then prefix = "▶ " end
-                    txt:SetText(FText(string.format("%s%d. %s", prefix, i, m.name)))
+                    txt:SetText(FText(string.format("%d. %s", i, m.name)))
+                    btn:SetContent(txt)
                 end)
-                scroll:AddChild(txt)
+                scroll:AddChild(btn)
+                -- 绑定点击 → ChangeSceneMapWithId 传送
+                pcall(function()
+                    btn.OnClicked:Add(function()
+                        Log("[传送] 鼠标点击: " .. m.name .. " (ID " .. tostring(m.id) .. ")")
+                        CallTomap(m.id)
+                    end)
+                end)
                 itemTexts[i] = txt
             end
-            Log("[面板] 全量列表创建完成: " .. tostring(#itemTexts) .. " 项")
+            Log("[面板] 全量按钮创建完成: " .. tostring(#BigMaps) .. " 项")
 
             widget:AddToViewport(10000)
             Log("[面板] ScrollBox 面板 AddToViewport 完成")
@@ -469,22 +504,16 @@ if not IsKeyBindRegistered(Key.ESCAPE) then
     end)
 end
 
--- ============ F2 打开游戏驿站界面 ============
+-- ============ F2 呼出/关闭传送按钮面板 ============
 
 if not IsKeyBindRegistered(Key.F2) then
     RegisterKeyBind(Key.F2, function()
-        Log("[面板] F2 按下：打开驿站界面")
-        ExecuteInGameThread(function()
-            pcall(function()
-                local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
-                if JH and JH:IsValid() then
-                    JH:OpenCourierStation(0)
-                    Log("[面板] OpenCourierStation 已调用")
-                else
-                    Log("[面板] JHNeoUISubsystem 未找到")
-                end
-            end)
-        end)
+        Log("[面板] F2 按下")
+        if menuOpen then
+            HidePanel()
+        else
+            ShowPanel()
+        end
     end)
 end
 
@@ -578,25 +607,32 @@ local function AddAllMapsToCourier()
             courierInjected = false
             return
         end
+        -- 找原驿站模板（ID 1 平康城驿站），复制其完整结构
+        local template = nil
+        dt:ForEachRow(function(rowName, rowData)
+            if tostring(rowName) == "1" then
+                template = rowData
+                return true
+            end
+        end)
+        if not template then
+            Log("[驿站] 找不到原驿站模板（ID 1）")
+            return
+        end
         local count = 0
         for i, m in ipairs(BigMaps) do
             pcall(function()
-                dt:AddRow("map_" .. tostring(m.id), {
-                    ID = 100 + i,
-                    DisplayName = FText(m.name),
-                    Region = 1,
-                    MapId = m.id,
-                    Price = 0,
-                    TeleportationX = 0,
-                    TeleportationY = 0,
-                    TeleportationZ = 0,
-                    Requirements = {},
-                    NPCId = -1,
-                })
+                local rn = tostring(100 + i)
+                dt:AddRow(rn, template)  -- 复制原驿站完整结构
+                local row = dt:FindRow(rn)
+                if row then
+                    row.MapId = m.id
+                    row.DisplayName = FText(m.name)
+                end
                 count = count + 1
             end)
         end
-        Log("[驿站] 已注入 " .. tostring(count) .. " 个地图到驿站表（F2 打开驿站界面即可鼠标点击传送）")
+        Log("[驿站] 已复制注入 " .. tostring(count) .. " 个地图到驿站表（结构对齐原驿站）")
     end)
 end
 -- 启动 10 秒后注入（游戏世界加载后）
