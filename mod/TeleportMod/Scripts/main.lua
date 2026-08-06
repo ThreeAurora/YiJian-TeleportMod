@@ -44,44 +44,22 @@ local function CallTomap(mapId)
     Log(string.format("[传送] 地图ID %d", mapId))
     ExecuteInGameThread(function()
         local ok, err = pcall(function()
-            local dt = LoadAsset("/Game/JH/Tables/Maps.Maps")
-            Log("[传送] Maps 表: " .. tostring(dt))
-            if not dt or not dt:IsValid() then
-                Log("[传送] Maps 表无效")
-                return
-            end
-            local row = dt:FindRow(tostring(mapId))
-            Log("[传送] FindRow(" .. tostring(mapId) .. "): " .. tostring(row))
-            if not row then
-                Log("[传送] 找不到行")
-                return
-            end
-            local mapName = ""
-            pcall(function() mapName = tostring(row.MapName:ToString()) end)
-            Log("[传送] MapName: " .. tostring(mapName))
-            local path = MapPaths[mapName]
-            Log("[传送] 路径: " .. tostring(path))
-            if not path then
-                Log("[传送] 找不到路径")
-                return
-            end
             local PC = FindPlayerController()
-            Log("[传送] PC: " .. tostring(PC))
-            if PC and PC:IsValid() then
-                -- 用游戏传送函数 ChangeSceneMapDDD（MapDir + MapName）
-                local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
-                if JH and JH:IsValid() then
-                    local mapDir = path:match("(.+)/[^/]+$")
-                    local mapName = path:match("[^/]+$")
-                    JH:ChangeSceneMapDDD(PC, mapDir, mapName)
-                    Log("[传送] ChangeSceneMapDDD: " .. tostring(mapDir) .. " / " .. tostring(mapName))
-                else
-                    Log("[传送] JHNeoUISubsystem 未找到")
-                end
+            if not PC then
+                Log("[传送] 无 PlayerController")
+                return
             end
+            local task = FindFirstOf("AsyncTaskChangeSceneMap")
+            if not task or not task:IsValid() then
+                Log("[传送] 未找到 AsyncTaskChangeSceneMap 实例")
+                return
+            end
+            -- 完整参数：WorldContext, MapId, TargetLocation, TargetFaceDirect, 传送动画开启
+            task:ChangeSceneMapWithId(PC, mapId, nil, 0, true, true, true, true)
+            Log("[传送] ChangeSceneMapWithId 调用: " .. tostring(mapId))
         end)
         if not ok then
-            Log("[传送] CallTomap 错误: " .. tostring(err))
+            Log("[传送] 传送错误: " .. tostring(err))
         end
     end)
 end
@@ -139,6 +117,176 @@ RegisterConsoleCommandGlobalHandler("tpadd2", function(Cmd, CommandParts, Ar)
                 NPCId = -1,
             })
             Log("[驿站] AddRow 测试成功！")
+        end)
+    end)
+    return true
+end)
+
+-- dump GM 命令 VM/View 方法（命令执行核心）
+RegisterConsoleCommandGlobalHandler("tpcmd4", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        for _, clsName in ipairs({"JHNeoUIGMCommandVM", "JHNeoUIGMCommandView"}) do
+            pcall(function()
+                local cls = StaticFindObject("/Script/JH." .. clsName)
+                if not cls then
+                    Log("[cmd4] " .. clsName .. " 类未找到")
+                else
+                    Log("[cmd4] === " .. clsName .. " 方法 ===")
+                    cls:ForEachFunction(function(fn)
+                        Log("[cmd4]   " .. fn:GetFName():ToString())
+                    end)
+                end
+            end)
+        end
+    end)
+    return true
+end)
+
+-- dump GM 命令面板实例方法（命令处理入口）
+RegisterConsoleCommandGlobalHandler("tpcmd3", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local widgets = FindAllOf("BPMV_GMCommand")
+            Log("[cmd3] BPMV_GMCommand 实例数: " .. tostring(#widgets or 0))
+            for _, w in ipairs(widgets or {}) do
+                pcall(function()
+                    local cls = w:GetClass()
+                    local clsFull = tostring(cls:GetFullName())
+                    Log("[cmd3] 实例类: " .. clsFull)
+                    cls:ForEachFunction(function(fn)
+                        Log("[cmd3]   函数: " .. fn:GetFName():ToString())
+                    end)
+                end)
+            end
+        end)
+        -- 也找命令相关对象
+        pcall(function()
+            ForEachUObject(function(obj)
+                pcall(function()
+                    local full = obj:GetFullName()
+                    if string.find(full, "GMCommand") or string.find(full, "CommandPanel") then
+                        if string.find(full, "Function") or string.find(full, "Class") then
+                            Log("[cmd3] 命令对象: " .. full)
+                        end
+                    end
+                end)
+            end)
+        end)
+    end)
+    return true
+end)
+
+-- 探测 F1 命令处理：hook JHNeoUISubsystem 命令相关方法
+RegisterConsoleCommandGlobalHandler("tpcmd2", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
+            if not JH then
+                Log("[cmd2] JHNeoUISubsystem 未找到")
+                return
+            end
+            local cls = JH:GetClass()
+            local count = 0
+            cls:ForEachFunction(function(fn)
+                local n = fn:GetFName():ToString()
+                if string.find(n, "Handle") or string.find(n, "Command") or string.find(n, "Exec")
+                   or string.find(n, "GM_") or string.find(n, "Process") or string.find(n, "Show") or string.find(n, "Change") then
+                    pcall(function()
+                        RegisterHook("/Script/JH.JHNeoUISubsystem:" .. n, function(...)
+                            Log("[hook] JH:" .. n .. " 触发")
+                        end)
+                        count = count + 1
+                    end)
+                end
+            end)
+            Log("[cmd2] 已 hook " .. tostring(count) .. " 个 JH 方法")
+        end)
+    end)
+    return true
+end)
+
+-- 探测 F1 GM 命令处理入口（hook 多个可能的 exec/命令点）
+RegisterConsoleCommandGlobalHandler("tpcmd", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        local installed = 0
+        pcall(function()
+            RegisterHook("/Script/Engine.Engine:Exec", function(Context, Cmd, Ar2)
+                Log("[cmd] Engine:Exec 收到: " .. tostring(Cmd))
+            end)
+            installed = installed + 1
+        end)
+        pcall(function()
+            RegisterHook("/Script/Engine.GameViewportClient:Exec", function(Context, Cmd, Ar2)
+                Log("[cmd] GameViewportClient:Exec 收到: " .. tostring(Cmd))
+            end)
+            installed = installed + 1
+        end)
+        pcall(function()
+            RegisterHook("/Script/Engine.World:Exec", function(Context, Cmd, Ar2)
+                Log("[cmd] World:Exec 收到: " .. tostring(Cmd))
+            end)
+            installed = installed + 1
+        end)
+        pcall(function()
+            RegisterHook("/Script/Engine.PlayerController:Exec", function(Context, Cmd, Ar2)
+                Log("[cmd] PlayerController:Exec 收到: " .. tostring(Cmd))
+            end)
+            installed = installed + 1
+        end)
+        Log("[cmd] 已安装 " .. tostring(installed) .. " 个探测 hook")
+    end)
+    return true
+end)
+
+-- dump GM 命令面板函数（找 tomap 命令处理）
+RegisterConsoleCommandGlobalHandler("tpgm", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local cls = StaticFindObject("/Game/JH/JHNeoUI_Common/Modules/GMCommand/BPMV_GMCommand.BPMV_GMCommand_C")
+            if not cls then
+                Log("[gm] BPMV_GMCommand 类未找到")
+            else
+                Log("[gm] BPMV_GMCommand 函数:")
+                cls:ForEachFunction(function(fn)
+                    Log("[gm]   " .. fn:GetFName():ToString())
+                end)
+            end
+        end)
+        -- 也找命令相关对象
+        pcall(function()
+            ForEachUObject(function(obj)
+                pcall(function()
+                    local full = obj:GetFullName()
+                    if string.find(full, "GMCommand") and not string.find(full, "BPMV") then
+                        Log("[gm] 对象: " .. full)
+                    end
+                end)
+            end)
+        end)
+    end)
+    return true
+end)
+
+-- dump AsyncTaskChangeSceneMap 方法参数（完整传送链）
+RegisterConsoleCommandGlobalHandler("tpfn2", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local cls = StaticFindObject("/Script/JH.AsyncTaskChangeSceneMap")
+            if not cls then
+                Log("[fn2] AsyncTaskChangeSceneMap 类未找到")
+                return
+            end
+            cls:ForEachFunction(function(fn)
+                local n = fn:GetFName():ToString()
+                if string.find(n, "ChangeSceneMap") or string.find(n, "StartChangeMap") then
+                    Log("[fn2] === 函数: " .. n .. " ===")
+                    fn:ForEachProperty(function(prop)
+                        pcall(function()
+                            Log("[fn2]   参数: " .. prop:GetFName():ToString() .. " (" .. prop:GetClass():GetFName():ToString() .. ")")
+                        end)
+                    end)
+                end
+            end)
         end)
     end)
     return true
@@ -723,3 +871,87 @@ local function AddAllMapsToCourier()
 end
 -- 启动 10 秒后注入（游戏世界加载后）
 ExecuteWithDelay(10000, AddAllMapsToCourier)
+
+-- ============ GM 命令界面输入 hook（拼音前缀传送） ============
+
+local ok_cmd, MapCmds = pcall(require, "maps_cmd")
+if not ok_cmd or type(MapCmds) ~= "table" then MapCmds = {} end
+Log("[传送] 已加载 " .. tostring(#MapCmds) .. " 个拼音传送命令")
+
+-- 注册拼音前缀命令（F1 控制台输入 wutong → 传送）
+local cmdCount = 0
+for cmdname, m in pairs(MapCmds) do
+    if m.id then  -- 唯一命令（冲突的不注册，输入完整拼音区分）
+        pcall(function()
+            RegisterConsoleCommandGlobalHandler(cmdname, function()
+                Log("[传送] " .. cmdname .. " → " .. m.name)
+                CallTomap(m.id)
+                return true
+            end)
+        end)
+        cmdCount = cmdCount + 1
+    end
+end
+Log("[传送] 已注册 " .. tostring(cmdCount) .. " 个拼音前缀命令")
+
+-- 拼音命令处理（匹配 + 传送）
+local function HandlePinyin(k)
+    -- 精确匹配
+    local exact = MapCmds[k]
+    if exact then
+        if exact.id then
+            Log("[传送] " .. k .. " → " .. exact.name)
+            CallTomap(exact.id)
+        else
+            local names = {}
+            for _, e in ipairs(exact) do
+                table.insert(names, e.name)
+            end
+            Log("[传送] 「" .. k .. "」匹配多个: " .. table.concat(names, "、") .. "，请输入完整拼音")
+        end
+        return
+    end
+    -- 前缀匹配
+    local out = {}
+    local seen = {}
+    for cmdname, m in pairs(MapCmds) do
+        if string.find(cmdname, k, 1, true) == 1 then
+            local n = m.name or ""
+            if not seen[n] then
+                seen[n] = true
+                table.insert(out, m)
+            end
+        end
+    end
+    if #out == 1 and out[1].id then
+        Log("[传送] " .. k .. " → " .. out[1].name)
+        CallTomap(out[1].id)
+    elseif #out > 1 then
+        local names = {}
+        for _, m in ipairs(out) do
+            table.insert(names, m.name)
+        end
+        Log("[传送] 「" .. k .. "」匹配多个: " .. table.concat(names, "、") .. "，请补充拼音")
+    end
+end
+
+-- hook GM 命令界面输入提交（识别拼音 → 传送）
+RegisterHook("/Game/JH/JHNeoUI_Common/Modules/GMCommand/BPMV_GMCommand.BPMV_GMCommand_C:BndEvt__Text_K2Node_ComponentBoundEvent_0_OnEditableTextCommittedEvent__DelegateSignature", function(...)
+    Log("[命令] GM 输入提交触发")
+    local txt = ""
+    pcall(function()
+        local args = { ... }
+        for i, p in ipairs(args) do
+            local ps = tostring(p)
+            if p and type(p) == "userdata" and p:type() == "RemoteUnrealParam" then
+                local v = p:get()
+                pcall(function() txt = tostring(v:ToString()) end)
+            end
+        end
+    end)
+    Log("[命令] 输入内容: " .. tostring(txt))
+    local k = string.lower(tostring(txt or "")):gsub("%s+", ""):gsub("^%s+", ""):gsub("%s+$", "")
+    if k ~= "" then
+        HandlePinyin(k)
+    end
+end)
