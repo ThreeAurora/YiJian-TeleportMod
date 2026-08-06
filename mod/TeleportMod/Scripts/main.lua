@@ -37,19 +37,79 @@ local function FindPlayerController()
 end
 
 local function CallTomap(mapId)
-    Log(string.format("[传送] tomap %d", mapId))
+    Log(string.format("[传送] ChangeSceneMapWithId %d", mapId))
     ExecuteInGameThread(function()
-        local PC = FindPlayerController()
-        if not PC or not PC:IsValid() then
-            Log("[传送] 错误：找不到 PlayerController")
-            return
-        end
+        -- 方式1: 找 AsyncTaskChangeSceneMap 实例调用（tomap 底层）
         pcall(function()
-            PC:ProcessConsoleExec("tomap " .. tostring(mapId), nil, PC)
-            Log("[传送] tomap 已发送: " .. tostring(mapId))
+            local task = FindFirstOf("AsyncTaskChangeSceneMap")
+            if task and task:IsValid() then
+                task:ChangeSceneMapWithId(mapId)
+                Log("[传送] 实例调用 ChangeSceneMapWithId: " .. tostring(mapId))
+            else
+                Log("[传送] 未找到 AsyncTaskChangeSceneMap 实例")
+            end
+        end)
+        -- 方式2: CDO
+        pcall(function()
+            local cdo = StaticFindObject("/Script/JH.Default__AsyncTaskChangeSceneMap")
+            if cdo and cdo:IsValid() then
+                cdo:ChangeSceneMapWithId(mapId)
+                Log("[传送] CDO 调用 ChangeSceneMapWithId: " .. tostring(mapId))
+            end
         end)
     end)
 end
+
+-- hook 游戏传送函数，捕获地图路径格式
+RegisterHook("/Script/JH.JHNeoUISubsystem:ChangeSceneMapDDD", function(Params)
+    Log("[传送hook] ChangeSceneMapDDD 触发！")
+    pcall(function()
+        for k, v in pairs(Params or {}) do
+            Log("[传送hook] 参数[" .. tostring(k) .. "] = " .. tostring(v))
+        end
+    end)
+end)
+
+-- 扫描游戏传送相关对象/类（找正确的传送入口）
+RegisterConsoleCommandGlobalHandler("tpscan", function(Cmd, CommandParts, Ar)
+    Log("[scan] 开始扫描传送相关对象")
+    ExecuteInGameThread(function()
+        local count = 0
+        pcall(function()
+            ForEachUObject(function(obj)
+                if count >= 30 then return true end
+                pcall(function()
+                    local full = obj:GetFullName()
+                    if string.find(full, "ChangeSceneMap") or string.find(full, "AsyncTaskChangeScene") or string.find(full, "UAsyncTask") then
+                        count = count + 1
+                        Log("[scan] " .. full)
+                    end
+                end)
+            end)
+        end)
+        Log("[scan] 找到 " .. tostring(count) .. " 个，扫描结束")
+    end)
+    return true
+end)
+
+-- dump JHNeoUISubsystem 函数（找命令处理入口）
+RegisterConsoleCommandGlobalHandler("tpfn", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
+            if JH and JH:IsValid() then
+                local cls = JH:GetClass()
+                local cnt = 0
+                cls:ForEachFunction(function(fn)
+                    cnt = cnt + 1
+                    Log("[FN] " .. fn:GetFName():ToString())
+                end)
+                Log("[FN] JHNeoUISubsystem 函数总数: " .. tostring(cnt))
+            end
+        end)
+    end)
+    return true
+end)
 
 -- ============ 面板状态 ============
 
@@ -247,29 +307,22 @@ end
 
 local function ShowPanel()
     if not panel then
-        CreatePanel()
+        CreatePanel()  -- 创建时 UpdateList 一次
     end
     menuOpen = true
     selectedIdx = 1
     pageIndex = 1
     Log("[面板] ShowPanel: 开始")
-    pcall(function()
-        if panel and panel:IsValid() then
-            Log("[面板] ShowPanel: SetVisibility")
-            panel:SetVisibility(0)  -- Visible
-            local PC = FindPlayerController()
-            local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
-            if PC then
-                Log("[面板] ShowPanel: SetInputMode_UIOnly")
-                pcall(function() library:SetInputMode_UIOnly(PC, nil, 0, false) end)
-                Log("[面板] ShowPanel: SetShowMouseCursor")
-                pcall(function() PC:SetShowMouseCursor(true) end)
-            end
-        end
-    end)
-    Log("[面板] ShowPanel: UpdateList")
-    if panel then
-        UpdateList()
+    -- 面板已存在时不反复 UpdateList（避免复用崩溃），用屏幕提示当前选择
+    local m = BigMaps[selectedIdx]
+    if m then
+        ScreenMsg(string.format("[传送] 1/%d 当前: %s (PgDn翻页)", #BigMaps, m.name))
+    end
+    -- 切 UI 模式（↑↓ 选择生效，角色锁定，类似背包）
+    local PC = FindPlayerController()
+    local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+    if PC then
+        pcall(function() library:SetInputMode_UIOnly(PC, nil, 0, false) end)
     end
     Log("[面板] 面板已打开")
 end
@@ -277,26 +330,20 @@ end
 local function HidePanel()
     menuOpen = false
     Log("[面板] HidePanel: 开始")
-    -- 完全不碰面板（避免 SetVisibility/RemoveFromParent 崩溃），只恢复输入模式
-    pcall(function()
-        local PC = FindPlayerController()
-        local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
-        if PC then
-            Log("[面板] HidePanel: SetInputMode_GameOnly")
-            pcall(function() library:SetInputMode_GameOnly(PC) end)
-        end
-    end)
+    -- 恢复游戏模式（不碰面板，面板留待 LoadMap 清理）
+    local PC = FindPlayerController()
+    local library = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+    if PC then
+        pcall(function() library:SetInputMode_GameOnly(PC) end)
+    end
     Log("[面板] 面板已关闭")
 end
 
--- 地图切换前自动清理面板（防止引用失效崩溃）
+-- 地图切换前清理面板引用（不 RemoveFromParent，让 LoadMap 自然清理）
 RegisterLoadMapPreHook(function()
-    if panel then
-        Log("[面板] 地图切换，清理面板")
-        pcall(function() panel:RemoveFromParent() end)
-        panel = nil
-    end
+    panel = nil
     menuOpen = false
+    Log("[面板] LoadMap: 清理面板引用")
 end)
 
 -- ============ 键盘导航 ============
