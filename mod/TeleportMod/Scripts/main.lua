@@ -70,6 +70,85 @@ RegisterHook("/Script/JH.JHNeoUISubsystem:ChangeSceneMapDDD", function(Params)
     end)
 end)
 
+-- 驿站表 AddRow 验证（ForEachRow 读现有行 + AddRow 测试）
+RegisterConsoleCommandGlobalHandler("tpadd2", function(Cmd, CommandParts, Ar)
+    Log("[驿站] === ForEachRow 读现有行 ===")
+    ExecuteInGameThread(function()
+        local dt = LoadAsset("/Game/JH/Tables/CourierStation.CourierStation")
+        if not dt or not dt:IsValid() then
+            Log("[驿站] 加载失败")
+            return
+        end
+        -- 读现有行
+        pcall(function()
+            local cnt = 0
+            dt:ForEachRow(function(rowName, rowData)
+                cnt = cnt + 1
+                if cnt <= 20 then
+                    pcall(function()
+                        local id = tostring(rowData.ID)
+                        local nm = ""
+                        pcall(function() nm = tostring(rowData.DisplayName:ToString()) end)
+                        local region = tostring(rowData.Region)
+                        local mapId = tostring(rowData.MapId)
+                        Log(string.format("[驿站] %s: ID=%s 名称=%s 区域=%s MapId=%s", tostring(rowName), id, nm, region, mapId))
+                    end)
+                end
+            end)
+            Log("[驿站] ForEachRow 共 " .. tostring(cnt) .. " 行")
+        end)
+        -- AddRow 测试
+        Log("[驿站] === AddRow 测试 ===")
+        pcall(function()
+            dt:AddRow("test_map_1", {
+                ID = 1000,
+                DisplayName = FText("测试传送"),
+                Region = 1,
+                MapId = 27,
+                Price = 0,
+                TeleportationX = 0,
+                TeleportationY = 0,
+                TeleportationZ = 0,
+                Requirements = {},
+                NPCId = -1,
+            })
+            Log("[驿站] AddRow 测试成功！")
+        end)
+    end)
+    return true
+end)
+
+-- 确认驿站表注入情况
+RegisterConsoleCommandGlobalHandler("tpcheck", function(Cmd, CommandParts, Ar)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local dt = LoadAsset("/Game/JH/Tables/CourierStation.CourierStation")
+            if not dt or not dt:IsValid() then
+                Log("[驿站] 加载失败")
+                return
+            end
+            local cnt = 0
+            local newCnt = 0
+            local samples = {}
+            dt:ForEachRow(function(rowName, rowData)
+                cnt = cnt + 1
+                local rn = tostring(rowName)
+                if string.find(rn, "map_") then
+                    newCnt = newCnt + 1
+                    if #samples < 8 then
+                        pcall(function()
+                            table.insert(samples, rn .. "=" .. tostring(rowData.MapId))
+                        end)
+                    end
+                end
+            end)
+            Log(string.format("[驿站] 总行数=%d, 新地图行=%d", cnt, newCnt))
+            Log("[驿站] 新行样本: " .. table.concat(samples, ", "))
+        end)
+    end)
+    return true
+end)
+
 -- 扫描游戏传送相关对象/类（找正确的传送入口）
 RegisterConsoleCommandGlobalHandler("tpscan", function(Cmd, CommandParts, Ar)
     Log("[scan] 开始扫描传送相关对象")
@@ -248,7 +327,9 @@ local function CreatePanel()
             for i, m in ipairs(BigMaps) do
                 local txt = ConstructWidget("/Script/UMG.TextBlock", tree)
                 pcall(function()
-                    txt:SetText(FText(string.format("%d. %s", i, m.name)))
+                    local prefix = ""
+                    if i == 1 then prefix = "▶ " end
+                    txt:SetText(FText(string.format("%s%d. %s", prefix, i, m.name)))
                 end)
                 scroll:AddChild(txt)
                 itemTexts[i] = txt
@@ -261,12 +342,23 @@ local function CreatePanel()
     end)
 end
 
+local lastSel = 0
 local function UpdateSelection()
-    -- 用屏幕提示当前选择（不操作 TextBlock，避免崩溃）
+    -- 面板内高亮选中项（改 2 个 TextBlock：取消上一个 ▶，标记当前 ▶）
+    pcall(function()
+        if lastSel > 0 and lastSel <= #BigMaps and itemTexts[lastSel] then
+            itemTexts[lastSel]:SetText(FText(string.format("%d. %s", lastSel, BigMaps[lastSel].name)))
+        end
+    end)
     local m = BigMaps[selectedIdx]
-    if m then
-        ScreenMsg(string.format("[传送] 当前选择: %d/%d %s", selectedIdx, #BigMaps, m.name))
+    if m and itemTexts[selectedIdx] then
+        pcall(function()
+            itemTexts[selectedIdx]:SetText(FText(string.format("▶ %d. %s", selectedIdx, m.name)))
+        end)
     end
+    lastSel = selectedIdx
+    -- 日志反馈（日志可见）
+    Log("[面板] 选择: " .. tostring(selectedIdx) .. " " .. tostring(m and m.name or "?"))
 end
 
 local function UpdateList()
@@ -377,16 +469,22 @@ if not IsKeyBindRegistered(Key.ESCAPE) then
     end)
 end
 
--- ============ F2 呼出/关闭 ============
+-- ============ F2 打开游戏驿站界面 ============
 
 if not IsKeyBindRegistered(Key.F2) then
     RegisterKeyBind(Key.F2, function()
-        Log("[面板] F2 按下")
-        if menuOpen then
-            HidePanel()
-        else
-            ShowPanel()
-        end
+        Log("[面板] F2 按下：打开驿站界面")
+        ExecuteInGameThread(function()
+            pcall(function()
+                local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
+                if JH and JH:IsValid() then
+                    JH:OpenCourierStation(0)
+                    Log("[面板] OpenCourierStation 已调用")
+                else
+                    Log("[面板] JHNeoUISubsystem 未找到")
+                end
+            end)
+        end)
     end)
 end
 
@@ -466,3 +564,40 @@ RegisterConsoleCommandGlobalHandler("tpm", function(Cmd, CommandParts, Ar)
 end)
 
 Log("[传送] 世界地图传送面板已就绪：F2 打开面板 / F10 控制台输入地名传送")
+
+-- ============ 批量注入：92 个地图注册成驿站（驿站界面鼠标点击传送） ============
+
+local courierInjected = false
+local function AddAllMapsToCourier()
+    if courierInjected then return end
+    courierInjected = true
+    ExecuteInGameThread(function()
+        local dt = LoadAsset("/Game/JH/Tables/CourierStation.CourierStation")
+        if not dt or not dt:IsValid() then
+            Log("[驿站] 表加载失败，稍后重试")
+            courierInjected = false
+            return
+        end
+        local count = 0
+        for i, m in ipairs(BigMaps) do
+            pcall(function()
+                dt:AddRow("map_" .. tostring(m.id), {
+                    ID = 100 + i,
+                    DisplayName = FText(m.name),
+                    Region = 1,
+                    MapId = m.id,
+                    Price = 0,
+                    TeleportationX = 0,
+                    TeleportationY = 0,
+                    TeleportationZ = 0,
+                    Requirements = {},
+                    NPCId = -1,
+                })
+                count = count + 1
+            end)
+        end
+        Log("[驿站] 已注入 " .. tostring(count) .. " 个地图到驿站表（F2 打开驿站界面即可鼠标点击传送）")
+    end)
+end
+-- 启动 10 秒后注入（游戏世界加载后）
+ExecuteWithDelay(10000, AddAllMapsToCourier)
