@@ -43,32 +43,46 @@ if not ok_path or type(MapPaths) ~= "table" then MapPaths = {} end
 local function CallTomap(mapId)
     Log(string.format("[传送] 地图ID %d", mapId))
     ExecuteInGameThread(function()
-        pcall(function()
-            -- 读 Maps 表的 MapName
+        local ok, err = pcall(function()
             local dt = LoadAsset("/Game/JH/Tables/Maps.Maps")
+            Log("[传送] Maps 表: " .. tostring(dt))
             if not dt or not dt:IsValid() then
-                Log("[传送] Maps 表加载失败")
+                Log("[传送] Maps 表无效")
                 return
             end
             local row = dt:FindRow(tostring(mapId))
+            Log("[传送] FindRow(" .. tostring(mapId) .. "): " .. tostring(row))
             if not row then
-                Log("[传送] 找不到行: " .. tostring(mapId))
+                Log("[传送] 找不到行")
                 return
             end
             local mapName = ""
             pcall(function() mapName = tostring(row.MapName:ToString()) end)
+            Log("[传送] MapName: " .. tostring(mapName))
             local path = MapPaths[mapName]
+            Log("[传送] 路径: " .. tostring(path))
             if not path then
-                Log("[传送] 找不到路径: " .. mapName)
+                Log("[传送] 找不到路径")
                 return
             end
-            -- ClientTravel 传送到完整地图路径
             local PC = FindPlayerController()
+            Log("[传送] PC: " .. tostring(PC))
             if PC and PC:IsValid() then
-                PC:ClientTravel(path, 1, false)
-                Log("[传送] ClientTravel: " .. path)
+                -- 用游戏传送函数 ChangeSceneMapDDD（MapDir + MapName）
+                local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
+                if JH and JH:IsValid() then
+                    local mapDir = path:match("(.+)/[^/]+$")
+                    local mapName = path:match("[^/]+$")
+                    JH:ChangeSceneMapDDD(PC, mapDir, mapName)
+                    Log("[传送] ChangeSceneMapDDD: " .. tostring(mapDir) .. " / " .. tostring(mapName))
+                else
+                    Log("[传送] JHNeoUISubsystem 未找到")
+                end
             end
         end)
+        if not ok then
+            Log("[传送] CallTomap 错误: " .. tostring(err))
+        end
     end)
 end
 
@@ -569,16 +583,22 @@ if not IsKeyBindRegistered(Key.ESCAPE) then
     end)
 end
 
--- ============ F2 呼出/关闭传送按钮面板 ============
+-- ============ F2 打开游戏驿站界面 ============
 
 if not IsKeyBindRegistered(Key.F2) then
     RegisterKeyBind(Key.F2, function()
-        Log("[面板] F2 按下")
-        if menuOpen then
-            HidePanel()
-        else
-            ShowPanel()
-        end
+        Log("[面板] F2 按下：打开驿站界面")
+        ExecuteInGameThread(function()
+            pcall(function()
+                local JH = StaticFindObject("/Script/JH.Default__JHNeoUISubsystem")
+                if JH and JH:IsValid() then
+                    JH:OpenCourierStation(0)
+                    Log("[面板] OpenCourierStation 已调用")
+                else
+                    Log("[面板] JHNeoUISubsystem 未找到")
+                end
+            end)
+        end)
     end)
 end
 
