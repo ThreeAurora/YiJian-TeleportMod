@@ -192,34 +192,37 @@ local function CreatePanel()
             local vbox = ConstructWidget("/Script/UMG.VerticalBox", tree)
             border:SetContent(vbox)
 
+            -- 设置中文字体（楷体）的辅助函数
+            local function SetCNFont(txt)
+                pcall(function()
+                    local f = LoadAsset("/Game/JH/JHNeoUI/UIAssets/Font/simkai")
+                    if f and f:IsValid() then
+                        local fi = txt.Font
+                        fi.FontObject = f
+                        txt:SetFont(fi)
+                    end
+                end)
+            end
+
             -- 标题
             local title = ConstructWidget("/Script/UMG.TextBlock", tree)
             title:SetText(FText("世 界 地 图 传 送"))
-            if textFont then pcall(function() title:SetFont(textFont) end) end
-            pcall(function()
-                title:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 0.85, B = 0.3, A = 1 }, ColorUseRule = 0 })
-            end)
+            SetCNFont(title)
             vbox:AddChildToVerticalBox(title)
 
             -- 地图列表（固定 12 个槽位，分页填充）
             itemTexts = {}
             for i = 1, PAGE_SIZE do
                 local txt = ConstructWidget("/Script/UMG.TextBlock", tree)
-                if textFont then pcall(function() txt:SetFont(textFont) end) end
-                pcall(function()
-                    txt:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 1, B = 1, A = 1 }, ColorUseRule = 0 })
-                end)
+                SetCNFont(txt)
                 vbox:AddChildToVerticalBox(txt)
                 itemTexts[i] = txt
             end
 
             -- 提示行
             local hint = ConstructWidget("/Script/UMG.TextBlock", tree)
-            hint:SetText(FText("↑↓ 选择   PgUp/PgDn 翻页   回车 传送   ESC 关闭"))
-            if textFont then pcall(function() hint:SetFont(textFont) end) end
-            pcall(function()
-                hint:SetColorAndOpacity({ SpecifiedColor = { R = 0.7, G = 0.7, B = 0.7, A = 1 }, ColorUseRule = 0 })
-            end)
+            hint:SetText(FText("UP/DOWN select  PGUP/PGDN page  ENTER go  ESC close"))
+            SetCNFont(hint)
             vbox:AddChildToVerticalBox(hint)
 
             Log("[面板] 构建完成，准备 AddToViewport")
@@ -230,17 +233,8 @@ local function CreatePanel()
 end
 
 local function UpdateSelection()
-    pcall(function()
-        local pageStart = (pageIndex - 1) * PAGE_SIZE + 1
-        for i, txt in ipairs(itemTexts) do
-            local absIdx = pageStart + i - 1
-            if absIdx == selectedIdx then
-                txt:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 0.8, B = 0.2, A = 1 }, ColorUseRule = 0 })
-            else
-                txt:SetColorAndOpacity({ SpecifiedColor = { R = 1, G = 1, B = 1, A = 1 }, ColorUseRule = 0 })
-            end
-        end
-    end)
+    -- 暂不用 SetColorAndOpacity（结构体参数可能崩溃），仅记录
+    Log("[面板] UpdateSelection: 选中 " .. tostring(selectedIdx))
 end
 
 local function TotalPages()
@@ -248,18 +242,24 @@ local function TotalPages()
 end
 
 local function UpdateList()
+    Log("[面板] UpdateList: 槽位数=" .. tostring(#itemTexts))
     pcall(function()
         local pageStart = (pageIndex - 1) * PAGE_SIZE + 1
         for i = 1, PAGE_SIZE do
             local idx = pageStart + i - 1
             local m = BigMaps[idx]
-            if m then
-                itemTexts[i]:SetText(FText(string.format("%d. %s", idx, m.name)))
-            else
-                itemTexts[i]:SetText(FText(""))
+            if m and itemTexts[i] then
+                pcall(function()
+                    itemTexts[i]:SetText(FText(string.format("%d. %s", idx, m.name)))
+                end)
+            elseif itemTexts[i] then
+                pcall(function()
+                    itemTexts[i]:SetText(FText(""))
+                end)
             end
         end
     end)
+    Log("[面板] UpdateList 完成")
     UpdateSelection()
 end
 
@@ -382,8 +382,9 @@ if not IsKeyBindRegistered(Key.RETURN) then
             local m = BigMaps[selectedIdx]
             if m then
                 Log("[传送] 面板选择: " .. m.name .. " (ID " .. tostring(m.id) .. ")")
-                CallTomap(m.id)
+                -- 先移除面板（防止地图切换时 widget 失效崩溃），再传送
                 HidePanel()
+                CallTomap(m.id)
             end
         end
     end)
