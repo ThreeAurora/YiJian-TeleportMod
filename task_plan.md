@@ -52,3 +52,15 @@
 - 部分 LV_ 开头地图可能是子关卡，open 后可能无 PlayerStart
 - ClientMessage 可能不显示（游戏禁用 HUD 消息），需测试
 - 传送到未加载剧情区域可能触发异常，测试确认
+
+## 最终结论
+- 采用指令传送方案（F1 控制台拼音）而非 UI 面板（UMG 注入在本游戏极不稳定）
+- 键位：F1 = 黑色 UE 控制台（ConsoleEnablerMod）；GM 命令界面（ShowGMCommandLineMod）已删除
+- 92 个大位置（AI 识图完整地图），每地点注册完整拼音 + 前两字前缀，小写+大写变体（165 键）
+- 传送失效已修复：切图后场景实例销毁 → StaticConstructObject 新建实例兜底
+- 待改进：传送黑屏（TargetLocation 出生点）
+
+## 最终交付（2026-08-06 用户实测通过）
+- F1 控制台：wutong / wutongcun / WUTONG 等 165+ 命令传送正常
+- 传送不再随进图时间失效（新建实例兜底）
+- 代码清理完成：移除调试残留/驿站注入/废弃面板，main.lua 974→193 行，只留核心功能

@@ -37,9 +37,20 @@
 | F1 GM 命令行不走标准 exec | 游戏自定义命令系统 | ULocalPlayer/ProcessConsoleExec/CallFunctionByName hook 无效 |
 
 ### 最终交付
-- **F10 输入拼音传送**（92 个地点拼音速查表：`projects/2026/08/逸剑风云决传送mod/拼音速查表.md`）
+- **F1 控制台输入拼音传送**（完整拼音 + 前两字前缀，小写+大写，165 键；速查表：`projects/2026/08/逸剑风云决传送mod/拼音速查表.md`）
 - **F2** → 游戏驿站界面
 - 已知问题：ChangeSceneMapWithId 传送黑屏（出生点未设置），待解决
+
+### 收尾期新教训（2026-08-06）
+| 问题 | 原因 | 解决 |
+|------|------|------|
+| `{ ... }` 写在 pcall 内层函数导致编译错误，全脚本加载失败 | `...` 仅限 vararg 函数 | 移到外层 vararg 函数；部署前用 luaparser 校验全部 Lua 语法 |
+| 切图后传送自动失效 | AsyncTaskChangeSceneMap 场景实例随地图销毁 | 场景无实例时 StaticConstructObject 新建实例兜底（日志验证有效） |
+| RegisterULocalPlayerExecPreHook 不触发 | 黑色控制台(UConsole)不走 ULocalPlayer::Exec | 改用 RegisterConsoleCommandGlobalHandler 注册小写+大写变体 |
+| 前缀命令 wutong 失效但 wutongcun 有效 | RegCmd 循环只注册全拼/中文/缩写，前缀未注册 | 额外注册 maps_cmd 全部键（前缀+全拼） |
+| #MapCmds 误报 0 | Lua `#` 只统计数组部分，字典无效 | 改用 pairs 计数 |
+| ShowGMCommandLineMod 在 mods.txt 禁用不生效 | UE4SS 禁用项仍可能加载 | 直接删除 mod 目录 |
+| 调试残留污染启动（13 个调试命令+多处 hook+驿站注入） | 探索阶段遗留 | 大清理 main.lua 974→193 行；驿站表注入会改游戏数据表，已移除；废弃 UMG 面板的方向键/回车/ESC 绑定不再注册 |
 
 ## 待验证（游戏内测试）
 - [ ] OpenLevel 跨地图传送是否生效
