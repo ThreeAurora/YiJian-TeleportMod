@@ -230,78 +230,46 @@ local function CreatePanel()
         pcall(function()
             local tree = widget.WidgetTree
 
-            local vbox = ConstructWidget("/Script/UMG.VerticalBox", tree)
-            if not vbox then
-                Log("[面板] VerticalBox 创建失败")
+            -- ScrollBox 根（驿站风格：滚动列表，全量铺开）
+            local scroll = ConstructWidget("/Script/UMG.ScrollBox", tree)
+            if not scroll then
+                Log("[面板] ScrollBox 创建失败")
                 return
             end
-            tree.RootWidget = vbox
+            tree.RootWidget = scroll
 
-            -- 标题（英文测试 SetText 是否工作）
+            -- 标题
             local title = ConstructWidget("/Script/UMG.TextBlock", tree)
-            Log("[面板] 创建标题")
-            title:SetText(FText("WORLD MAP TELEPORT"))
-            Log("[面板] 标题 SetText 完成")
-            vbox:AddChildToVerticalBox(title)
+            pcall(function() title:SetText(FText(string.format("WORLD MAP TELEPORT (%d)", #BigMaps))) end)
+            scroll:AddChild(title)
 
-            -- 地图列表（固定 12 个槽位，创建时立即设置文本，不依赖 UpdateList）
+            -- 全部地图（创建时立即 SetText，A-Z 顺序，不依赖 UpdateList）
             itemTexts = {}
-            for i = 1, PAGE_SIZE do
+            for i, m in ipairs(BigMaps) do
                 local txt = ConstructWidget("/Script/UMG.TextBlock", tree)
-                local m = BigMaps[i]
-                if m then
-                    pcall(function()
-                        txt:SetText(FText(string.format("[%d]", m.id)))
-                        Log("[面板] 槽位 " .. i .. " SetText: " .. tostring(m.id))
-                    end)
-                end
-                vbox:AddChildToVerticalBox(txt)
+                pcall(function()
+                    txt:SetText(FText(string.format("%d. %s", i, m.name)))
+                end)
+                scroll:AddChild(txt)
                 itemTexts[i] = txt
             end
-            Log("[面板] 槽位创建完成: " .. tostring(#itemTexts))
-
-            -- 提示行
-            local hint = ConstructWidget("/Script/UMG.TextBlock", tree)
-            hint:SetText(FText("UP/DOWN select  ENTER go  ESC close"))
-            vbox:AddChildToVerticalBox(hint)
+            Log("[面板] 全量列表创建完成: " .. tostring(#itemTexts) .. " 项")
 
             widget:AddToViewport(10000)
-            Log("[面板] AddToViewport 完成")
-            -- 面板创建完成后填充列表文字
-            Log("[面板] CreatePanel 调用 UpdateList")
-            UpdateList()
+            Log("[面板] ScrollBox 面板 AddToViewport 完成")
         end)
     end)
 end
 
 local function UpdateSelection()
-    -- 暂不用 SetColorAndOpacity（结构体参数可能崩溃），仅记录
-    Log("[面板] UpdateSelection: 选中 " .. tostring(selectedIdx))
-end
-
-local function TotalPages()
-    return math.ceil(#BigMaps / PAGE_SIZE)
+    -- 用屏幕提示当前选择（不操作 TextBlock，避免崩溃）
+    local m = BigMaps[selectedIdx]
+    if m then
+        ScreenMsg(string.format("[传送] 当前选择: %d/%d %s", selectedIdx, #BigMaps, m.name))
+    end
 end
 
 local function UpdateList()
-    if itemTexts == nil then
-        Log("[面板] UpdateList: itemTexts 是 nil!")
-        return
-    end
-    Log("[面板] UpdateList: 槽位数=" .. tostring(#itemTexts))
-    pcall(function()
-        local pageStart = (pageIndex - 1) * PAGE_SIZE + 1
-        for i = 1, PAGE_SIZE do
-            local idx = pageStart + i - 1
-            local m = BigMaps[idx]
-            if m and itemTexts[i] then
-                pcall(function()
-                    itemTexts[i]:SetText(FText(string.format("[%d]", m.id)))
-                end)
-            end
-        end
-    end)
-    Log("[面板] UpdateList 完成")
     UpdateSelection()
 end
 
@@ -351,16 +319,9 @@ end)
 if not IsKeyBindRegistered(Key.UP_ARROW) then
     RegisterKeyBind(Key.UP_ARROW, function()
         if menuOpen and #BigMaps > 0 then
-            local pageStart = (pageIndex - 1) * PAGE_SIZE + 1
             selectedIdx = selectedIdx - 1
-            if selectedIdx < pageStart then
-                pageIndex = pageIndex - 1
-                if pageIndex < 1 then pageIndex = TotalPages() end
-                selectedIdx = math.min(pageIndex * PAGE_SIZE, #BigMaps)
-                UpdateList()
-            else
-                UpdateSelection()
-            end
+            if selectedIdx < 1 then selectedIdx = #BigMaps end
+            UpdateSelection()
         end
     end)
 end
@@ -368,16 +329,9 @@ end
 if not IsKeyBindRegistered(Key.DOWN_ARROW) then
     RegisterKeyBind(Key.DOWN_ARROW, function()
         if menuOpen and #BigMaps > 0 then
-            local pageEnd = math.min(pageIndex * PAGE_SIZE, #BigMaps)
             selectedIdx = selectedIdx + 1
-            if selectedIdx > pageEnd then
-                pageIndex = pageIndex + 1
-                if pageIndex > TotalPages() then pageIndex = 1 end
-                selectedIdx = (pageIndex - 1) * PAGE_SIZE + 1
-                UpdateList()
-            else
-                UpdateSelection()
-            end
+            if selectedIdx > #BigMaps then selectedIdx = 1 end
+            UpdateSelection()
         end
     end)
 end
@@ -385,10 +339,9 @@ end
 if not IsKeyBindRegistered(Key.PAGE_UP) then
     RegisterKeyBind(Key.PAGE_UP, function()
         if menuOpen then
-            pageIndex = pageIndex - 1
-            if pageIndex < 1 then pageIndex = TotalPages() end
-            selectedIdx = (pageIndex - 1) * PAGE_SIZE + 1
-            UpdateList()
+            selectedIdx = selectedIdx - 10
+            if selectedIdx < 1 then selectedIdx = 1 end
+            UpdateSelection()
         end
     end)
 end
@@ -396,10 +349,9 @@ end
 if not IsKeyBindRegistered(Key.PAGE_DOWN) then
     RegisterKeyBind(Key.PAGE_DOWN, function()
         if menuOpen then
-            pageIndex = pageIndex + 1
-            if pageIndex > TotalPages() then pageIndex = 1 end
-            selectedIdx = (pageIndex - 1) * PAGE_SIZE + 1
-            UpdateList()
+            selectedIdx = selectedIdx + 10
+            if selectedIdx > #BigMaps then selectedIdx = #BigMaps end
+            UpdateSelection()
         end
     end)
 end
