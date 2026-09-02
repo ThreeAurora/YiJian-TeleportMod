@@ -1,0 +1,13 @@
+# 会话重建工作区
+_rebuild/
+
+# 第三方 UE4SS 运行时（体积大，请从 UE4SS Releases 下载）
+extracted/UE4SS/
+extracted/UE4SS_EXP944/
+
+# UE4SS 原始压缩包与游戏数据解码中间产物
+tools/*.zip
+tools/*.bin
+
+# 发布打包产物（tools/package_release.py 可重建）
+发布/
