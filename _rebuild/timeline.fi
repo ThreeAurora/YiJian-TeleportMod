@@ -1,0 +1,324 @@
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1785952088 +0800
+committer Aurora <chengweida2010@163.com> 1785952088 +0800
+data 269
+feat(mod脚本): 初始化 TeleportMod 传送原型与配套工具
+
+基于 UE4SS Lua 脚本搭建 mod 雏形，实现按地图 ID 的控制台传送；
+附地图数据生成、mod 安装部署与 Lua 语法检查脚本，以及任务/进度/发现三份开发记录。
+M 100644 41e6c83c1c34088defa63f1657c11f6d8e161192 tools/generate_maps.py
+M 100644 2804cbb8fa926f148232426fc294332d3e1e078d mod/TeleportMod/Scripts/main.lua
+M 100644 9c3219fe4c2fa9e7516f4b284f3779bc01099add task_plan.md
+M 100644 d0d6f04baac40d6383cabad8a2f87ad0a2d6c47b progress.md
+M 100644 4e200b277fea69a289980ac24a6b9925f1516908 findings.md
+M 100644 112e3cd79cef986175ddbf30e5a23f4b4f1b9102 tools/install_mod.py
+M 100644 1665878e8f566a676288bade4293f1002acd06b4 tools/check_lua.py
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1785953369 +0800
+committer Aurora <chengweida2010@163.com> 1785953369 +0800
+data 176
+feat(打包工具): 新增 UE4SS 运行时替换脚本
+
+replace_ue4ss.py 自动完成 UE4SS 解包与游戏目录部署；findings 补充 pak 解包与控制台启用结论。
+M 100644 6e42c4aeda87c4e5381eda1486f4625b3ffc953e tools/replace_ue4ss.py
+M 100644 81c741dd888ce8d0f94e1c6ccc4c364a7549967b findings.md
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1785954481 +0800
+committer Aurora <chengweida2010@163.com> 1785954481 +0800
+data 143
+fix(mod脚本): 修正控制台传送命令无响应
+
+F10 小控制台输入传送指令回车无反应，调整命令注册与执行入口。
+M 100644 147ad4f060cc19b45965ee7ef7a09fab51032b09 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1785989279 +0800
+committer Aurora <chengweida2010@163.com> 1785989279 +0800
+data 139
+fix(mod脚本): 排查传送后画面黑屏
+
+传送生效但画面全黑仅有脚步声，调整场景切换后的加载与渲染处理。
+M 100644 ddaa4d69ec4df51fac6eabb0506a52617b277da7 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1785990132 +0800
+committer Aurora <chengweida2010@163.com> 1785990132 +0800
+data 124
+fix(mod脚本): 校准 tomap 地图 ID 对应关系
+
+逐一验证测试地图与梧桐村、洛村等地点的 ID 映射。
+M 100644 0051a7e7020a0b47028d1d72a4394eaed55ecd18 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1785991063 +0800
+committer Aurora <chengweida2010@163.com> 1785991063 +0800
+data 204
+feat(地图生成): 新增地图名称与 ID 映射生成脚本
+
+parse_maps/parse_maps2 提取游戏地图表，gen_maps_names 生成中文名映射；
+main.lua 同步修正地名对应的传送目标。
+M 100644 ac04dea4c09c125f50fce14c21edfbf40b269ba9 tools/parse_maps.py
+M 100644 bd13dc764b6c5cf46e9ed7c541e2e81108d9722f tools/parse_maps2.py
+M 100644 fa0ae7d0e6fc112709c7dfad4ed667fe52de4210 tools/gen_maps_names.py
+M 100644 2305d230134b463e4da96ee5852c03f02a5f3477 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1785992069 +0800
+committer Aurora <chengweida2010@163.com> 1785992069 +0800
+data 142
+feat(地图生成): 新增驿站传送点解析脚本
+
+parse_courier.py 提取游戏驿站站点数据，为面板化传送做数据准备。
+M 100644 57dcd2fa3f717e3acc254b2f47e94ecec8fc59f4 tools/parse_courier.py
+M 100644 c7116a03788a66833c409f63162a82889395b04a mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1785994939 +0800
+committer Aurora <chengweida2010@163.com> 1785994939 +0800
+data 204
+feat(mod脚本): 尝试可视化面板并转向拼音命令传送
+
+多轮修复面板方案闪退后，新增 gen_pinyin.py 生成地名拼音数据，
+支持在控制台直接输入地名拼音传送。
+M 100644 539a1994fbb2cba1182f4b9f1e9523260aace0b4 mod/TeleportMod/Scripts/main.lua
+M 100644 181f04dc99a1eb5c455e08e06f192d597153c1a3 tools/gen_pinyin.py
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1785998595 +0800
+committer Aurora <chengweida2010@163.com> 1785998595 +0800
+data 52
+refactor(mod脚本): 调整传送面板实现细节
+M 100644 9810f3181bf9dc7a336ab5476edc40c793deb948 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786000296 +0800
+committer Aurora <chengweida2010@163.com> 1786000296 +0800
+data 128
+fix(mod脚本): 修复面板方案导致的启动崩溃
+
+排查游戏 Fatal Error 崩溃转储，修正面板初始化路径。
+M 100644 57ba5ae9e86dee6fe9d7be3dd8633ab5238ba700 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786004664 +0800
+committer Aurora <chengweida2010@163.com> 1786004664 +0800
+data 134
+feat(mod脚本): 扩充可传送地名列表
+
+保留未收录中文名的条目并全量加入列表，便于逐一核对传送点。
+M 100644 2c8fd5d64182836dd9e501fc77ea95c06112259b mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786005869 +0800
+committer Aurora <chengweida2010@163.com> 1786005869 +0800
+data 188
+refactor(mod脚本): 转向世界地图主要位置方案
+
+新增 gen_bigmap.py 提取世界地图大位置；main.lua 重写为精简面板方案，
+收敛到 20 余个主要传送点。
+M 100644 9c8a1f26664c9a03eb5fca15ce6e8ec6c781495e mod/TeleportMod/Scripts/main.lua
+M 100644 b66147de9b592ccc12447edf16ec85f512ddb44f tools/gen_bigmap.py
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786006476 +0800
+committer Aurora <chengweida2010@163.com> 1786006476 +0800
+data 41
+fix(mod脚本): 修复面板呼出崩溃
+M 100644 aa2b84cc260d2d6c4f26ea36c5b76520c6bd8d12 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786008399 +0800
+committer Aurora <chengweida2010@163.com> 1786008399 +0800
+data 230
+feat(地图生成): 依世界地图截图核对传送点清单
+
+新增 gen_final_bigmap.py 与 gen_map_maps.py 整理最终位置集；
+main.lua 依截图地名提取结果增删点位，修正重复条目并剔除无效目标。
+M 100644 b352c0eb6c9d4475e8ca4796461d2b7333653688 tools/gen_final_bigmap.py
+M 100644 f8aa379523974895287b04afdad6efedd0888b85 mod/TeleportMod/Scripts/main.lua
+M 100644 b6f9b476cab3aac971b8aeff5da80e89eb3ef45e tools/gen_map_maps.py
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786009523 +0800
+committer Aurora <chengweida2010@163.com> 1786009523 +0800
+data 115
+fix(mod脚本): 修复面板列表选择崩溃
+
+面板呼出正常但上下选择即崩，修正列表项构建。
+M 100644 c0a37afa65c82c72e6fa13521cd0d28f3ca633be mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786011489 +0800
+committer Aurora <chengweida2010@163.com> 1786011489 +0800
+data 137
+fix(mod脚本): 修复传送面板列表空白
+
+多轮排查列表渲染为空/仅剩灰块的问题，逐项定位数据传递断点。
+M 100644 c96caac3b5e9ae6dfe5794dd1be904c63888f760 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786013462 +0800
+committer Aurora <chengweida2010@163.com> 1786013462 +0800
+data 155
+fix(mod脚本): 打通面板传送并修复重复开关崩溃
+
+面板显示恢复正常后接通选择与传送执行；修复重复按压 F2 的崩溃。
+M 100644 4b5884ce7c5cbc276339f1c654d6580e45d32c2c mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786015704 +0800
+committer Aurora <chengweida2010@163.com> 1786015704 +0800
+data 153
+refactor(mod脚本): 传送面板改为驿站风格分类布局
+
+F2 面板改按字母序分类铺开全部地名，向游戏原生驿站交互靠拢。
+M 100644 6cf03ec4571ba1f7ce60de9ad2fbbddd4a575d73 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786017765 +0800
+committer Aurora <chengweida2010@163.com> 1786017765 +0800
+data 120
+feat(mod脚本): 实现驿站式点击直达传送
+
+复用游戏驿站界面扩展站点至 92 个，选中即传送。
+M 100644 5c8dad3148f1b18c2623b364ba2fe9ad4d6e3b4b mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786019990 +0800
+committer Aurora <chengweida2010@163.com> 1786019990 +0800
+data 137
+fix(mod脚本): 修正面板按钮与传送指令绑定
+
+按钮实际调用改为复用 tomap 指令，排查 tpcheck 无响应问题。
+M 100644 78d8920e433e9c8c02f786593c32fdbe477ddb8f mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786022029 +0800
+committer Aurora <chengweida2010@163.com> 1786022029 +0800
+data 132
+fix(mod脚本): 修复 F2 崩溃并补充地图路径数据
+
+新增 gen_maps_path.py 生成路径数据，修复 F2 面板崩溃。
+M 100644 c5905fb65a08136c3d501ea4a0397958a7c9e1a8 mod/TeleportMod/Scripts/main.lua
+M 100644 f72e8aa1e79838ca068f034d84bc1e6a516287b6 tools/gen_maps_path.py
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786022920 +0800
+committer Aurora <chengweida2010@163.com> 1786022920 +0800
+data 57
+fix(mod脚本): 恢复 F2 打开游戏原生驿站地图
+M 100644 07b2f07958fff9841463ad9d8a233c7582ef8ec5 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786025938 +0800
+committer Aurora <chengweida2010@163.com> 1786025938 +0800
+data 188
+feat(mod脚本): 重构传送流程并统一快捷键
+
+回滚易卡死的传送动画方案；原 F10 控制台职能并入 F1；
+排查全拼命令失效原因；findings 补充结论。
+M 100644 e1ea50e53dca2daf3437cba6e53a85a5afba1fff mod/TeleportMod/Scripts/main.lua
+M 100644 86db91a7607ecee2161f97f969f672c53afaa05d findings.md
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786026661 +0800
+committer Aurora <chengweida2010@163.com> 1786026661 +0800
+data 51
+fix(mod脚本): 修复 F1 拼音传送命令失效
+M 100644 3419a3127456bae8e48141096167f1b158c880f3 mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786029647 +0800
+committer Aurora <chengweida2010@163.com> 1786029647 +0800
+data 316
+feat(打包工具): 生成全量拼音命令并打包发布首版
+
+新增 gen_maps_cmd.py 生成全拼+前两字前缀命令；main.lua 清理冗余调试代码定型发布版；
+新增 package_release.py 一键打包与 MOD 说明生成脚本，输出用户说明文档；
+同步更新任务/进度/发现记录。
+M 100644 178f29dedb7af4d6ef2612d492eca6dff37f267f tools/gen_maps_cmd.py
+M 100644 9872ad9de8fc0b83462abcd1ddf46d2881221d79 mod/TeleportMod/Scripts/main.lua
+M 100644 309af78923f7b11f223badbed3f5389f44db61e9 task_plan.md
+M 100644 44392fa4d57a4d85548446cae2e8c92470f235ae progress.md
+M 100644 aaf105abec2c9ff9acbd913dea60df9521b4d6ad findings.md
+M 100644 d9631dfb3e27c7fd40325ce9372de6da50fcd472 tools/gen_mod_readme.py
+M 100644 04849b305d3a52dd190968c3cf93c995c13ab982 MOD说明.md
+M 100644 1f64339b97145f1fc85d74b42473d8f6a2a73bb1 tools/package_release.py
+M 100644 12de3489ac924b2a542cb9c9301d5c8575b39206 tools/gen_mod_readme_txt.py
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786038007 +0800
+committer Aurora <chengweida2010@163.com> 1786038007 +0800
+data 169
+feat(mod脚本): 新增 F8 呼出 GM 命令界面与好感度探测
+
+注册 F8 快捷键呼出游戏 GM 命令界面；新增 tpfav 命令探测好感度数据结构。
+M 100644 583b71cb2a62eb049b03e50716efaab94f935afe mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1786038790 +0800
+committer Aurora <chengweida2010@163.com> 1786038790 +0800
+data 106
+fix(mod脚本): 修正好感度探测输出
+
+tpfav 改为轻量探测，仅读取属性名避免崩溃。
+M 100644 de9db462f094a652e566316ff38f2d8486f1e15e mod/TeleportMod/Scripts/main.lua
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1788332017 +0800
+committer Aurora <chengweida2010@163.com> 1788332017 +0800
+data 152
+chore: 添加 .gitignore
+
+排除第三方 UE4SS 运行时与压缩包、游戏数据解码中间产物、
+发布打包产物及本地重建工作区。
+M 100644 ed0d7f8f4722277a802e711b957ddbe383053203 .gitignore
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1788332077 +0800
+committer Aurora <chengweida2010@163.com> 1788332077 +0800
+data 658
+chore: 纳入会话外脚本产物并对齐工作区
+
+纳入由脚本运行生成、未经过编辑器事件的产物：地图数据 lua、解析 json、
+UE4SS 参考文档与 main.lua 备份快照；MOD说明.md 定稿更名为 MOD说明.txt。
+
+新增文件：
+- MOD说明.txt
+- extracted/courier_stations.json
+- extracted/maps_id_name.json
+- mod/TeleportMod/Scripts/bigmap_data.lua
+- mod/TeleportMod/Scripts/maps.lua
+- mod/TeleportMod/Scripts/maps_cmd.lua
+- mod/TeleportMod/Scripts/maps_names.lua
+- mod/TeleportMod/Scripts/maps_path.lua
+- mod/TeleportMod/Scripts/maps_pinyin.lua
+- tools/UE4SS_API.txt
+- tools/UE4SS_Types.lua
+- tools/main.lua.bak_20260806
+M 100644 80e2e99f57ce74c9de6aa34f1f03a33a6ac15690 MOD说明.txt
+M 100644 5aaac69114f06b9dcbfcc72ed81c9e1c71f2ac19 extracted/courier_stations.json
+M 100644 e4b1d57ddbba0399f10e3fc35fe94eee5b121995 extracted/maps_id_name.json
+M 100644 2c38772d0959281201fc7da57f1d0c8212158d57 mod/TeleportMod/Scripts/bigmap_data.lua
+M 100644 d77a30fcb7f4c2f741d74f63b43cf87d27dc0fce mod/TeleportMod/Scripts/maps.lua
+M 100644 6b2aeaa6f07a64c22a563a66f44cd2490a045db5 mod/TeleportMod/Scripts/maps_cmd.lua
+M 100644 6b0abfbe53bfc8dc05ede1b94422676f842a5184 mod/TeleportMod/Scripts/maps_names.lua
+M 100644 7946a4778386c91bc4e22042d5063f8f8b1e28ec mod/TeleportMod/Scripts/maps_path.lua
+M 100644 ec3d250daf6d7f585af1e6326ab9ae813f5b81a9 mod/TeleportMod/Scripts/maps_pinyin.lua
+M 100644 db122c293c76425f5916cab32537ea2242afea44 tools/UE4SS_API.txt
+M 100644 935585fb715f15d7c2fb8a6a2a8e51694ceccf94 tools/UE4SS_Types.lua
+M 100644 23b7598ea99c3d657cca2b11e60a6dd9fefc7996 tools/main.lua.bak_20260806
+D MOD说明.md
+
+commit refs/heads/main
+author Aurora <chengweida2010@163.com> 1788332137 +0800
+committer Aurora <chengweida2010@163.com> 1788332137 +0800
+data 174
+docs: 添加 README 项目说明
+
+面向使用者的项目门面：功能特性、安装与按键说明、目录结构、
+工具链说明及不入库内容的重建方式。
+M 100644 c2e5ff5d308208bfb2a045a823c954e7a21a6e91 README.md
+

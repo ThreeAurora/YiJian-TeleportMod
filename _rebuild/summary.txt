@@ -1,0 +1,154 @@
+== G00 08-06 01:45~08-06 01:48 events=7
+   new W1E0     tools/generate_maps.py (1632)
+   new W1E0     mod/TeleportMod/Scripts/main.lua (4736)
+   new W1E0     task_plan.md (1559)
+   new W1E0     progress.md (406)
+   new W1E0     findings.md (634)
+   new W1E0     tools/install_mod.py (4307)
+   new W1E0     tools/check_lua.py (2615)
+   I "G:\Wandering Sword\Wandering_Sword\Content\Paks\Wandering_Sword-WindowsNoEditor
+== G01 08-06 02:09~08-06 02:09 events=2
+   new W1E0     tools/replace_ue4ss.py (3551)
+   new E1       findings.md (1197)
+   I 不小心中断了，你重新分析
+== G02 08-06 02:27~08-06 02:28 events=3
+   new W1E2     mod/TeleportMod/Scripts/main.lua (6539)
+   I F10是有小控制台，但传送回车没反应
+== G03 08-06 12:04~08-06 12:07 events=2
+   new E2       mod/TeleportMod/Scripts/main.lua (8376)
+   I 有反应，我试了两回，都是黑屏，但走路有走路声音，但看不见东西
+   I 都试了。  TOPMAP回车没反应
+== G04 08-06 12:18~08-06 12:22 events=2
+   new E2       mod/TeleportMod/Scripts/main.lua (8832)
+   I tomap 1有反应，去了测试地图。tomap 10是梧桐村
+   I tomap 13是洛村
+== G05 08-06 12:34~08-06 12:37 events=4
+   new W1E0     tools/parse_maps.py (1904)
+   new W1E0     tools/parse_maps2.py (1545)
+   new W1E0     tools/gen_maps_names.py (1095)
+   new W1E0     mod/TeleportMod/Scripts/main.lua (5045)
+   I 我不认为这东西如此难弄，我已经明确告诉你了两个id对应的位置，你应该做的，是考虑梧桐村的这个名字，它在哪，你全局搜索到它，然后，你再看它究竟是怎么对应到10的，
+== G06 08-06 12:51~08-06 12:54 events=2
+   new W1E0     tools/parse_courier.py (1333)
+   new E1       mod/TeleportMod/Scripts/main.lua (6536)
+   I 这东西不是这样做的。你要可视化UI，一个面板，F1呼出面板，然后直接点点点。我们首先，第一个页面，是传送到大位置的，我的意思是，梧桐村可以，后山山洞不行，也就是
+== G07 08-06 13:05~08-06 13:42 events=10
+   new E9       mod/TeleportMod/Scripts/main.lua (13137)
+   new W1E0     tools/gen_pinyin.py (1965)
+   I 可是它世界地图还是要找城市位置啊，和直接文字对应是不一样的。现在你要努力解决UI的问题
+   I 闪退了。
+   I 输入tpinfo了
+   I 有是有，你这个其实就是驿站传送了，这是一个常用功能。你能扩展吗？
+   I ok了
+   I 闪退了。 你要没本事，不如这样，我F1不是有指令台吗，而且我tomap 1的时候正常传送。你要不这样吧，你让我F1然后直接输入地图的缩写，就能传送过去如何？能做
+   I 我的意思是，如果不输入tpm，直接输入姑苏城呢？
+   I 姑苏城，没反应
+== G08 08-06 14:43~08-06 14:43 events=1
+   new E1       mod/TeleportMod/Scripts/main.lua (14199)
+   I 我还是想知道，MOD的UI你真的做不了？
+== G09 08-06 14:53~08-06 15:11 events=8
+   new E8       mod/TeleportMod/Scripts/main.lua (15300)
+   I 没有
+   I OK
+   I 游戏都没能进去。  X Fatal Error! Crashdump written to: G:Wandering Sword\Wandering_Sword
+   I 进去了。输入了
+   I 还是不行。123都不行
+== G10 08-06 16:24~08-06 16:24 events=1
+   new E1       mod/TeleportMod/Scripts/main.lua (16707)
+   I 不过滤掉，有意思，留着。  第一页这个是对的，其他的都放在里面哈。  我也好奇884个里面没有中文地名的那些可能是什么？你给我报个我自己跳转一下看看。
+== G11 08-06 16:39~08-06 16:44 events=4
+   new W1E2     mod/TeleportMod/Scripts/main.lua (11938)
+   new W1E0     tools/gen_bigmap.py (2424)
+   I 输入了tprows，没反应
+   I 算了，我们退而求其次吧，我们只弄大地图那20多个！好做吗？
+== G12 08-06 16:54~08-06 16:54 events=1
+   new E1       mod/TeleportMod/Scripts/main.lua (12214)
+   I 面板有了，X Fatal Error! Crashdump written to: G:Wandering Sword\Wandering_Sword\Bina
+== G13 08-06 17:04~08-06 17:26 events=14
+   new W1E1     tools/gen_final_bigmap.py (1671)
+   new E10      mod/TeleportMod/Scripts/main.lua (15453)
+   new W1E1     tools/gen_map_maps.py (2444)
+   I 两个湖是。  天水内城外城不要。  武当药谷不要  无名山谷 一线天山谷不要
+   I 这些图片是游戏《逸剑风云决》的地图截图，以下是从图中提取的黑底白字地名：  第一张图（海域/岛屿区域）： 玉璧岛 蟹岛 霓光岛 无名岛 游仙村 霹雳岛 雾岛 暮
+   I 哦，我知道了，地图上有两个幽云泽，因为是从一边到另一边渡河。  桃花林是对的。  可以了。  X Fatal Error! Crashdump written 
+   I 崩了，连文字都没有了，只有个空UI。
+== G14 08-06 17:39~08-06 17:45 events=4
+   new E4       mod/TeleportMod/Scripts/main.lua (15155)
+   I 完全空。面板呼出时正常，一上下选择就报错了 X Fatal Error! Crashdump written to: G:Wandering Sword\Wan
+   I 文字空。上下没问题了，回车后继续崩溃  X Fatal Error! Crashdump written to: G:Wandering Sword\Wande
+== G15 08-06 18:03~08-06 18:18 events=10
+   new E10      mod/TeleportMod/Scripts/main.lua (14402)
+   I 全部空空了，而且X Fatal Error! Crashdump written to: G:Wandering Sword\Wandering_Sword\B
+   I 全部空，只有一个灰色的方块，什么都没有。  X Fatal Error! Crashdump written to: G:Wandering Sword\Wan
+   I 1有，2没有画面列表项 3 依然崩 详见日志
+   I 全空。只有标题。没有列表。和前面没有任何区别，我给你纠错这么多次，你怎么解决不了这个问题呢？
+== G16 08-06 18:28~08-06 18:51 events=8
+   new E8       mod/TeleportMod/Scripts/main.lua (16203)
+   I 面板的显示是正常的。不过传送没反应  另外我按完F2又按F2就崩溃了
+   I 再按一次F2没关掉不过没崩。tpfn回车没任何反应，或者说，这个F10从来就没有真正输出过什么东西，从开发至今都没什么反馈。  然后，F2回车也没传送。
+   I 传了
+   I ok
+   I 我选什么选？我上下键根本就没有选择功能
+== G17 08-06 19:27~08-06 19:28 events=3
+   new E3       mod/TeleportMod/Scripts/main.lua (14439)
+   I 我纳闷你在搞什么？？走驿站行不行？看看F2你修好它，铺平按照A-Z去分类，90多个看看能铺开吗，直接全部走驿站的风格，鼠标点击，直接传送
+== G18 08-06 19:38~08-06 20:02 events=6
+   new E6       mod/TeleportMod/Scripts/main.lua (19478)
+   I 我点上下没反应啊，我根本不知道我选了什么，回车也没反应，而且再按F2它也没关掉。  我不是和你说吗，按照驿站的传送来，还是说你做不到。  就一个破传送难住你这么
+   I 继续
+   I 什么叫点一下直接传送？游戏默认的驿站是只有几个传送点的，你他妈不会自己分析么？你要主动给我加驿站，加满92个，在原来的基础上
+== G19 08-06 20:14~08-06 20:39 events=6
+   new E6       mod/TeleportMod/Scripts/main.lua (20803)
+   I 我输入了tpcheck没反应啊
+   I 我说，你搞错了吧？我们不就是利用这个界面做东西么？我们按钮实际调用的功能换成tomap 15这样形式的不就够了么？我们非要把地图弄成驿站？你想什么呢
+   I 点什么？面板和原来一个样子，哪来的别的按钮
+== G20 08-06 20:54~08-06 21:13 events=6
+   new E5       mod/TeleportMod/Scripts/main.lua (23145)
+   new W1E0     tools/gen_maps_path.py (1290)
+   I F2直接崩溃。
+   I 没反应
+== G21 08-06 21:24~08-06 21:28 events=3
+   new E3       mod/TeleportMod/Scripts/main.lua (24233)
+   I 没反应
+   I ok。另外，F2可以换回普通的驿站地图了
+== G22 08-06 21:39~08-06 22:18 events=13
+   new E12      mod/TeleportMod/Scripts/main.lua (32667)
+   new E1       findings.md (2288)
+   I 它有反应，但卡在传送动画里。但走路有脚步声，本质上并没有开启传送
+   I 算了，把动画回滚吧，留着也行
+   I ok
+   I OK
+   I 1
+   I 什么玩意，我说，我们原来的F10去F1，原来的F1不要了，听懂了？
+   I 没有。F1和F10都没用，无论是wutong还是wutongcun
+== G23 08-06 22:31~08-06 22:31 events=1
+   new E1       mod/TeleportMod/Scripts/main.lua (32663)
+   I F1只有小控制台不假，wutong没用了，怎么以前在F10的时候，wutongcun可以，现在F1的wutongcun也不行了？
+== G24 08-06 22:43~08-06 23:20 events=25
+   new W1E1     tools/gen_maps_cmd.py (2880)
+   new E8       mod/TeleportMod/Scripts/main.lua (6142)
+   new E2       task_plan.md (1986)
+   new E4       progress.md (1903)
+   new E2       findings.md (3036)
+   new W1E0     tools/gen_mod_readme.py (4160)
+   new E1       MOD说明.md (3257)
+   new W1E3     tools/package_release.py (2604)
+   new W1E0     tools/gen_mod_readme_txt.py (2901)
+   I 你搞笑呢，wutongcun是必有的！全拼的全称是必有的！然后才是前两字，懂了？如十万大山，要有shiwan和shiwandashan
+   I 存在问题，一开始传送没问题，但在某地方用多了，我有时传送会出问题，没了反应，然后我只有去世界地图然后再用控制台传送才能继续传送。似乎是我进了地图一定时间之后，它
+   I 另外目前你的脚本wutong是不行的， 只有wutongcun才行，有问题
+   I 没问题，我弄 错了
+   I 值得清理的、冗余但无害的  这些你清吧
+   I 可以
+   I MOD说明改成txt版本，不要表格了。同时也说明一下，我们不只能传这92个，共多少个地图来着，我们都能传，包括测试地图。而且说明这个F1控制台也能输入其他指令的
+== G25 08-07 01:19~08-07 01:40 events=7
+   new E7       mod/TeleportMod/Scripts/main.lua (8993)
+   I 不，这两个根本不是指令，因为控制台说没识别到，这又是如何呢
+   I 直接没反应呢
+   I 没反应
+   I ok
+   I 1
+   I 必须退出游戏？
+== G26 08-07 01:53~08-07 01:53 events=1
+   new E1       mod/TeleportMod/Scripts/main.lua (9416)
+   I 没说过探测完成。你看看

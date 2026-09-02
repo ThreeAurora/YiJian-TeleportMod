@@ -68,9 +68,7 @@ extracted/                 游戏数据解析产物与 UE4SS 运行时（运行�
 
 ## 仓库说明
 
-以下内容体积较大或可重新生成，未纳入版本库（见 `.gitignore`）：
-
-- `extracted/UE4SS*/`：第三方 UE4SS 运行时，请从 [UE4SS Releases](https://github.com/UE4SS-RE/RE-UE4SS/releases) 下载
+以上内容已**全量纳入版本库**（防丢模式，2026-09-02；总量约 100MB，UE4SS 为 MIT 许可的第三方运行时）。
 - `tools/*.zip`：UE4SS 原始压缩包
 - `tools/*.bin`：游戏数据解码中间产物
 - `发布/`：发布打包产物，可由 `python tools/package_release.py` 重建

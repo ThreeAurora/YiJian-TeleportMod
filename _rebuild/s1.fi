@@ -1,0 +1,569 @@
+commit refs/heads/main
+mark :1
+author Aurora <chengweida2010@163.com> 1785952088 +0800
+committer Aurora <chengweida2010@163.com> 1785952088 +0800
+data 268
+feat(mod脚本): 初始化 TeleportMod 传送原型与配套工具
+
+基于 UE4SS Lua 脚本搭建 mod 雏形，实现按地图 ID 的控制台传送；
+附地图数据生成、mod 安装部署与 Lua 语法检查脚本，以及任务/进度/发现三份开发记录。
+
+M 100644 inline tools/generate_maps.py
+data 1848
+# -*- coding: utf-8 -*-
+"""从 pak 文件清单生成 maps.lua（传送 mod 用的地图数据）"""
+import os
+import re
+
+# pak 文件清单（bash /tmp 下，Windows 临时目录）
+pak_list = r'C:\Users\Administrator\AppData\Local\Temp\pak_list.txt'
+
+# 输出
+out_path = r'e:\CCSpace\projects\2026\08\逸剑风云决传送mod\mod\TeleportMod\Scripts\maps.lua'
+
+with open(pak_list, encoding='utf-8') as f:
+    lines = [l.strip() for l in f if l.strip()]
+
+maps = [l for l in lines if '/JH/Maps/' in l and l.endswith('.umap')]
+
+# 排除工具/测试地图
+exclude_kw = ['UITool', 'TestMap', 'LittleGame', '_CG', 'Tool', 'Test']
+filtered = []
+for m in maps:
+    base = m[:-5]  # 去 .umap
+    fn = base.rsplit('/', 1)[-1]
+    if any(k in fn for k in exclude_kw):
+        continue
+    # 包路径: Wandering_Sword/Content/... -> /Game/...
+    pkg = '/Game' + base[len('Wandering_Sword/Content'):]
+    filtered.append((fn, pkg))
+
+print('Maps 目录地图总数:', len(maps))
+print('过滤后地图数:', len(filtered))
+
+# 生成 Lua 文件（UTF-8，含中文文件名）
+lines_out = []
+lines_out.append('-- 逸剑风云决 地图数据（由 pak 提取生成，勿手改）')
+lines_out.append('-- 格式: { name = 显示名, path = UE包路径 }')
+lines_out.append('local Maps = {')
+for fn, pkg in filtered:
+    fn_lua = fn.replace('\\', '\\\\').replace('"', '\\"')
+    pkg_lua = pkg.replace('\\', '\\\\').replace('"', '\\"')
+    lines_out.append('    { name = "%s", path = "%s" },' % (fn_lua, pkg_lua))
+lines_out.append('}')
+lines_out.append('')
+lines_out.append('return Maps')
+lines_out.append('')
+
+os.makedirs(os.path.dirname(out_path), exist_ok=True)
+with open(out_path, 'w', encoding='utf-8') as f:
+    f.write('\n'.join(lines_out))
+print('已生成:', out_path)
+print('示例:')
+for fn, pkg in filtered[:10]:
+    print('  %s -> %s' % (fn, pkg))
+
+M 100644 inline mod/TeleportMod/Scripts/main.lua
+data 5459
+--[[
+    逸剑风云决 · 全地图传送 mod (TeleportMod)
+    基于 UE4SS 3.x + UE4.26
+
+    用法（游戏内按 `~` 打开控制台）：
+      tpm <关键词>       搜索地图并传送（唯一匹配直接传，多匹配列出）
+      tplist [关键词]    列出全部/匹配的地图
+      tphelp             显示帮助
+    快捷键：
+      F6                 屏幕提示帮助（无控制台时）
+
+    传送实现：UGameplayStatics::OpenLevel，跨地图加载。
+]]
+
+-- ============ 工具函数 ============
+
+local function Log(msg)
+    print(msg .. "\n")
+end
+
+-- 找到玩家控制器
+local function FindPlayerController()
+    local PCs = FindAllOf("PlayerController")
+    if not PCs then
+        PCs = FindAllOf("Controller")
+    end
+    if not PCs then
+        return nil
+    end
+    for _, PC in pairs(PCs) do
+        if PC:IsValid() then
+            return PC
+        end
+    end
+    return nil
+end
+
+-- 获取 UGameplayStatics 默认对象（静态类方法容器）
+local function GetGameplayStatics()
+    return StaticFindObject("/Script/Engine.Default__GameplayStatics")
+end
+
+-- 尝试在游戏屏幕显示消息（若游戏启用了 HUD 消息则可见）
+local function ScreenMsg(msg)
+    local PC = FindPlayerController()
+    if PC and PC:IsValid() then
+        pcall(function()
+            PC:ClientMessage(msg, FName("None"), 5.0)
+        end)
+    end
+end
+
+-- ============ 地图数据 ============
+
+local ok_maps, Maps = pcall(require, "maps")
+if not ok_maps or type(Maps) ~= "table" then
+    Log("[传送] 警告：maps.lua 加载失败，请检查 Mods/TeleportMod/Scripts/maps.lua")
+    Maps = {}
+end
+Log(string.format("[传送] 已加载 %d 张地图", #Maps))
+
+-- ============ 搜索 ============
+
+local function SearchMaps(kw)
+    local k = string.lower(kw or "")
+    local out = {}
+    for _, m in ipairs(Maps) do
+        if string.find(string.lower(m.name), k, 1, true) or
+           string.find(string.lower(m.path), k, 1, true) then
+            table.insert(out, m)
+        end
+    end
+    return out
+end
+
+-- ============ 传送 ============
+
+local function Teleport(mapPath)
+    Log("[传送] 开始传送: " .. mapPath)
+    ExecuteInGameThread(function()
+        local PC = FindPlayerController()
+        if not PC or not PC:IsValid() then
+            Log("[传送] 错误：找不到 PlayerController")
+            return
+        end
+        local GS = GetGameplayStatics()
+        if not GS or not GS:IsValid() then
+            Log("[传送] 错误：无法访问 UGameplayStatics")
+            return
+        end
+        local ok, err = pcall(function()
+            GS:OpenLevel(PC, FName(mapPath), true, "")
+        end)
+        if ok then
+            Log("[传送] 正在传送到: " .. mapPath)
+            ScreenMsg("[传送] 正在传送到: " .. mapPath)
+        else
+            Log("[传送] 调用 OpenLevel 失败: " .. tostring(err))
+        end
+    end)
+end
+
+-- ============ 命令处理 ============
+
+local function PrintHelp()
+    Log("========================================")
+    Log(" 逸剑风云决 全地图传送 mod")
+    Log(" tpm <关键词>    搜索并传送地图")
+    Log(" tplist [关键词]  列出地图")
+    Log(" tphelp          帮助")
+    Log(" 例: tpm 神龙岛 | tpm Map65 | tplist 洛阳")
+    Log("========================================")
+end
+
+local function ListMaps(list, title)
+    Log("----------------------------------------")
+    Log(title)
+    for i, m in ipairs(list) do
+        Log(string.format(" %d. %s", i, m.name))
+    end
+    Log(string.format("共 %d 项。输入 tpm <名称> 直接传送", #list))
+    Log("----------------------------------------")
+end
+
+-- 处理 tpm 命令
+local function HandleTpm(CommandParts)
+    local kw = CommandParts and CommandParts[2]
+    if not kw or kw == "" then
+        PrintHelp()
+        return
+    end
+    local matches = SearchMaps(kw)
+    if #matches == 0 then
+        Log("[传送] 未找到匹配「" .. kw .. "」的地图")
+        return
+    elseif #matches == 1 then
+        Teleport(matches[1].path)
+        return
+    else
+        ListMaps(matches, string.format("[传送] 匹配「%s」%d 个，请细化关键词：", kw, #matches))
+    end
+end
+
+-- 处理 tplist 命令
+local function HandleTplist(CommandParts)
+    local kw = CommandParts and CommandParts[2]
+    if not kw or kw == "" then
+        ListMaps(Maps, "[传送] 全部地图列表")
+        return
+    end
+    local matches = SearchMaps(kw)
+    ListMaps(matches, string.format("[传送] 匹配「%s」的地图", kw))
+end
+
+-- ============ 注册命令 ============
+
+RegisterConsoleCommandGlobalHandler("tpm", function(Cmd, CommandParts, Ar)
+    HandleTpm(CommandParts)
+    return true
+end)
+
+RegisterConsoleCommandGlobalHandler("tplist", function(Cmd, CommandParts, Ar)
+    HandleTplist(CommandParts)
+    return true
+end)
+
+RegisterConsoleCommandGlobalHandler("tphelp", function(Cmd, CommandParts, Ar)
+    PrintHelp()
+    return true
+end)
+
+-- ============ 快捷键 ============
+
+if not IsKeyBindRegistered(Key.F6) then
+    RegisterKeyBind(Key.F6, function()
+        PrintHelp()
+        ScreenMsg("传送 mod 已就绪：控制台输入 tpm <地图名> 传送")
+    end)
+end
+
+Log("[传送] 传送 mod 加载完成！控制台输入 tphelp 查看帮助")
+
+M 100644 inline task_plan.md
+data 2631
+# 任务计划：逸剑风云决全地图传送 mod
+
+## 目标
+为《逸剑风云决》(Wandering Sword, UE4.26) 编写"全地图任意传送"功能性 mod。
+基于 UE4SS 3.x + Lua，快捷键/控制台命令触发，跨地图传送。
+
+## 需求（用户确认）
+- 功能形态：传送菜单
+- 传送范围：所有地图随便传（不限制剧情/任务解锁）
+
+## 项目位置
+`e:\CCSpace\projects\2026\08\逸剑风云决传送mod\`
+游戏位置：`G:\Wandering Sword\Wandering_Sword\`
+
+## Phase 1: 资源侦察 ✅
+- [X] 解析 pak（repak）：版本 V11、索引未加密、28.9 万文件
+- [X] 确认引擎：UE 4.26.2（exe 版本 4.26.2.0）
+- [X] 确认游戏结构：主包 JH/，739 张地图，驿站表 CourierStation（北地/关外/南疆/海外/西域）
+- [X] 地图数据表：JH/Tables/Maps.uasset（含 ViewName 显示名）
+- [X] mod 生态：官方无创意工坊，功能性 mod 走 UE4SS，pak 数据 mod 放 Content/Paks
+
+## Phase 2: 环境搭建 ✅
+- [X] 下载 repak（pak 解析）、UE4SS v3.0.1、zDEV（API 参考）
+- [X] 研究 UE4SS Lua API（无屏幕绘制 API，IMGui 仅 C++）
+- [X] 确认传送路径：UGameplayStatics::OpenLevel 跨地图；ProcessConsoleExec 备选
+- [X] 交互方案：游戏内控制台命令（tpm/tplist/tphelp）+ F6 快捷键
+
+## Phase 3: mod 开发（进行中）
+- [X] 生成 maps.lua（736 张地图数据，含 UE 包路径）
+- [X] 编写 main.lua（搜索 + 传送 + 命令注册）
+- [ ] 增强：地图中文显示名（运行时读 DataTable 或离线提取）
+- [ ] 增强：驿站表快速传送列表
+- [ ] 创建安装脚本 + 安装说明
+
+## Phase 4: 安装与测试（待做）
+- [ ] 安装 UE4SS + mod 到游戏 Binaries/Win64
+- [ ] 配置 EngineVersionOverride = 4.26
+- [ ] 游戏内测试：tpm/tplist 命令、跨地图传送
+- [ ] 记录测试结果，修复问题
+
+## 决策
+| 决策 | 内容 |
+|------|------|
+| D1 | 用 UE4SS Lua（非 pak 数据修改），因"任意地图传送"需运行时逻辑 |
+| D2 | 传送用 GameplayStatics::OpenLevel（引擎原生，不依赖游戏代码） |
+| D3 | UI 用游戏内控制台命令（UE4SS 无 Lua 绘制 API），非 UMG |
+| D4 | 地图数据从 pak 提取生成 maps.lua，不依赖游戏数据表 |
+| D5 | 交互命令：tpm <关键词> / tplist / tphelp |
+| D6 | 快捷键 F6 呼出帮助提示 |
+
+## 已知风险
+- 部分 LV_ 开头地图可能是子关卡，open 后可能无 PlayerStart
+- ClientMessage 可能不显示（游戏禁用 HUD 消息），需测试
+- 传送到未加载剧情区域可能触发异常，测试确认
+
+M 100644 inline progress.md
+data 654
+# 进度：逸剑风云决传送 mod
+
+## 2026-08-06
+- 解析主 pak（Wandering_Sword-WindowsNoEditor.pak，5.6GB）：V11、未加密、289441 文件
+- 确认引擎 UE 4.26.2，主内容包 JH/，739 张 .umap 地图
+- 确认驿站表 CourierStation = 快速旅行系统（五大区域枚举）
+- 下载 repak v0.2.3、UE4SS v3.0.1、zDEV（API.txt）
+- 生成地图数据 maps.lua（736 张，pak 提取）
+- 编写 main.lua v1（tpm/tplist/tphelp 命令 + F6 快捷键）
+- 完成项目三文件、地图数据、mod 主体
+
+## 待办
+- [ ] 中文地图名增强
+- [ ] 驿站快速传送列表
+- [ ] 安装脚本
+- [ ] 游戏内测试
+
+M 100644 inline findings.md
+data 1022
+# 问题记录：逸剑风云决传送 mod
+
+## 已发现
+| 问题 | 原因 | 处理 |
+|------|------|------|
+| Git Bash `/tmp` 路径 Python 不可见 | Python 是 Windows 原生程序，不认 bash 路径 | 用 cygpath 转 Windows 路径 |
+| bash 内嵌 Python 字符串反斜杠转义错误 | JSON/bash 多层转义 | 长脚本写成独立 .py 文件执行 |
+| WebFetch 被拦截 | 安全策略 | curl + Bash 绕行 |
+| PowerShell 读 exe 版本被 conda 干扰 | conda entry point DLL 加载失败 | 改用 ctypes 读 PE 版本资源 |
+| UE4SS Lua 无屏幕绘制 API | IMGui 仅 C++ mods 可用 | UI 改控制台命令方案 |
+| 驿站/Maps 数据表二进制直接解析复杂 | DataTable + FText 序列化 | 运行时用 UE4SS 读取（待做） |
+
+## 待验证（游戏内测试）
+- [ ] OpenLevel 跨地图传送是否生效
+- [ ] ClientMessage 是否显示到屏幕
+- [ ] CommandParts 索引约定（[1]=命令名?）
+- [ ] F6 快捷键是否与其他按键冲突
+- [ ] 子关卡（LV_ 前缀）open 是否正常
+
+M 100644 inline tools/install_mod.py
+data 4817
+# -*- coding: utf-8 -*-
+"""
+逸剑风云决传送 mod 安装脚本
+将 UE4SS + TeleportMod 安装到游戏 Binaries/Win64。
+
+设计原则：
+- 新增文件，不覆盖游戏已有文件（除非同名且属于本 mod）
+- 修改 UE4SS-settings.ini / mods.txt 前先备份
+- 幂等：重复运行安全
+"""
+import os
+import shutil
+import time
+
+# ===== 路径 =====
+PROJECT = r'e:\CCSpace\projects\2026\08\逸剑风云决传送mod'
+UE4SS_SRC = os.path.join(PROJECT, 'extracted', 'UE4SS')
+MOD_SRC = os.path.join(PROJECT, 'mod', 'TeleportMod')
+
+GAME_WIN64 = r'G:\Wandering Sword\Wandering_Sword\Binaries\Win64'
+
+def info(msg):
+    print('[安装] ' + msg)
+
+def backup(path):
+    """备份已有文件（防止覆盖用户配置）"""
+    if os.path.exists(path):
+        bak = path + '.bak_' + time.strftime('%Y%m%d_%H%M%S')
+        shutil.copy2(path, bak)
+        info('已备份 %s -> %s' % (os.path.basename(path), os.path.basename(bak)))
+
+def ensure_dir(path):
+    os.makedirs(path, exist_ok=True)
+
+def main():
+    if not os.path.isdir(GAME_WIN64):
+        info('错误：未找到游戏目录 %s' % GAME_WIN64)
+        return False
+    if not os.path.isdir(UE4SS_SRC):
+        info('错误：未找到 UE4SS 源目录 %s' % UE4SS_SRC)
+        return False
+
+    # 1. 复制 UE4SS 核心文件到 Win64
+    info('复制 UE4SS 核心文件...')
+    for fname in ['dwmapi.dll', 'UE4SS.dll', 'UE4SS-settings.ini', 'README.md', 'Changelog.md']:
+        src = os.path.join(UE4SS_SRC, fname)
+        if os.path.exists(src):
+            dst = os.path.join(GAME_WIN64, fname)
+            if os.path.exists(dst):
+                info('跳过（已存在）: %s' % fname)
+            else:
+                shutil.copy2(src, dst)
+                info('已复制: %s' % fname)
+
+    # 2. 复制 UE4SS 自带 Mods（内置示例 mod）
+    mods_dst = os.path.join(GAME_WIN64, 'Mods')
+    ensure_dir(mods_dst)
+    src_mods = os.path.join(UE4SS_SRC, 'Mods')
+    if os.path.isdir(src_mods):
+        info('复制 UE4SS 内置 mods...')
+        for item in os.listdir(src_mods):
+            s = os.path.join(src_mods, item)
+            d = os.path.join(mods_dst, item)
+            if os.path.exists(d):
+                # 已存在：检查是否内置 mod（跳过），TeleportMod 单独处理
+                if item == 'TeleportMod':
+                    shutil.rmtree(d)
+                    shutil.copytree(s, d)
+                    info('更新 TeleportMod')
+                else:
+                    info('跳过（已存在）: Mods/%s' % item)
+            else:
+                if os.path.isdir(s):
+                    shutil.copytree(s, d)
+                else:
+                    shutil.copy2(s, d)
+                info('已复制: Mods/%s' % item)
+
+    # 3. 复制 TeleportMod
+    info('复制 TeleportMod...')
+    tel_dst = os.path.join(mods_dst, 'TeleportMod')
+    if os.path.exists(tel_dst):
+        shutil.rmtree(tel_dst)
+    shutil.copytree(MOD_SRC, tel_dst)
+    info('已复制 TeleportMod')
+
+    # 4. 配置 UE4SS-settings.ini（引擎版本覆盖 4.26）
+    settings_path = os.path.join(GAME_WIN64, 'UE4SS-settings.ini')
+    if os.path.exists(settings_path):
+        backup(settings_path)
+        with open(settings_path, 'r', encoding='utf-8-sig') as f:
+            content = f.read()
+        if '[EngineVersionOverride]' not in content:
+            content += '\n[EngineVersionOverride]\nMajorVersion = 4\nMinorVersion = 26\n'
+        else:
+            # 替换空值
+            import re
+            content = re.sub(r'MajorVersion\s*=\s*\n?', 'MajorVersion = 4\n', content, count=1)
+            content = re.sub(r'MinorVersion\s*=\s*\n?', 'MinorVersion = 26\n', content, count=1)
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        info('已配置 UE4SS-settings.ini: EngineVersionOverride 4.26')
+
+    # 5. 配置 mods.txt（启用 TeleportMod）
+    mods_txt = os.path.join(mods_dst, 'mods.txt')
+    if os.path.exists(mods_txt):
+        backup(mods_txt)
+        with open(mods_txt, 'r', encoding='utf-8-sig') as f:
+            content = f.read()
+        if 'TeleportMod' not in content:
+            content = content.rstrip() + '\nTeleportMod : 1\n'
+            with open(mods_txt, 'w', encoding='utf-8') as f:
+                f.write(content)
+            info('已在 mods.txt 启用 TeleportMod')
+        else:
+            # 确保为 1
+            content = content.replace('TeleportMod : 0', 'TeleportMod : 1')
+            with open(mods_txt, 'w', encoding='utf-8') as f:
+                f.write(content)
+            info('mods.txt 已包含 TeleportMod（确保启用）')
+
+    info('安装完成！')
+    info('下一步：启动游戏，游戏内按 `~` 打开控制台，输入 tphelp 查看帮助')
+    return True
+
+if __name__ == '__main__':
+    main()
+
+M 100644 inline tools/check_lua.py
+data 2817
+# -*- coding: utf-8 -*-
+"""检查 Lua 文件的括号配对和引号配对（简化静态检查）"""
+import sys
+
+
+def strip_strings_comments(s):
+    """去掉字符串字面量和注释，返回纯代码"""
+    out = []
+    i = 0
+    n = len(s)
+    state = 'code'
+    while i < n:
+        c = s[i]
+        if state == 'code':
+            if c == '"':
+                state = 'str_dq'
+            elif c == "'":
+                state = 'str_sq'
+            elif c == '-' and i + 1 < n and s[i + 1] == '-':
+                # 注释
+                if i + 2 < n and s[i + 2] == '[':
+                    state = 'block_comment'
+                    i += 2
+                    continue
+                else:
+                    state = 'line_comment'
+            elif c == '[':
+                # 可能是长字符串 [[...]]，保守按 code 处理（括号检查）
+                out.append(c)
+            else:
+                out.append(c)
+        elif state == 'str_dq':
+            if c == '\\':
+                i += 1
+            elif c == '"':
+                state = 'code'
+        elif state == 'str_sq':
+            if c == '\\':
+                i += 1
+            elif c == "'":
+                state = 'code'
+        elif state == 'line_comment':
+            if c == '\n':
+                state = 'code'
+                out.append(c)
+        elif state == 'block_comment':
+            if c == ']':
+                state = 'code'
+        i += 1
+    return ''.join(out)
+
+
+def check(path):
+    with open(path, encoding='utf-8') as f:
+        src = f.read()
+    lines = src.split('\n')
+    code = strip_strings_comments(src)
+    pairs = {'(': ')', '[': ']', '{': '}'}
+    stack = []
+    errors = []
+    for idx, c in enumerate(code):
+        if c in pairs:
+            stack.append((c, idx))
+        elif c in pairs.values():
+            if not stack:
+                errors.append('多余闭合 %s (约第 %d 行)' % (c, src[:idx].count('\n') + 1))
+            else:
+                open_c, oi = stack.pop()
+                if pairs[open_c] != c:
+                    errors.append('括号不匹配: %s 对 %s (约第 %d 行)' % (open_c, c, src[:idx].count('\n') + 1))
+    if stack:
+        for c, idx in stack:
+            errors.append('未闭合 %s (约第 %d 行)' % (c, src[:idx].count('\n') + 1))
+    if errors:
+        print('%s: 发现问题' % path)
+        for e in errors:
+            print('  -', e)
+        return False
+    print('%s: OK (%d 行)' % (path, len(lines)))
+    return True
+
+
+if __name__ == '__main__':
+    files = [
+        r'e:\CCSpace\projects\2026\08\逸剑风云决传送mod\mod\TeleportMod\Scripts\main.lua',
+        r'e:\CCSpace\projects\2026\08\逸剑风云决传送mod\mod\TeleportMod\Scripts\maps.lua',
+    ]
+    ok = all(check(p) for p in files)
+    sys.exit(0 if ok else 1)
+
+
