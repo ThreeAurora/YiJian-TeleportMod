@@ -1,5 +1,7 @@
 # 逸剑风云决 · 全地图传送 MOD (TeleportMod)
 
+[English](./README.en-US.md) | 中文
+
 基于 [UE4SS](https://github.com/UE4SS-RE/RE-UE4SS) 的《逸剑风云决》(Wandering Sword) 全地图传送模组。以 Lua 脚本挂载，不改游戏本体文件：控制台输拼音即可传送全部 258 张地图，驿站界面点击直达 92 个世界地图大地点。
 
 ## 功能特性
